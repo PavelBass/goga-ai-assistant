@@ -8,18 +8,23 @@ from aiogram import (
     types,
 )
 from aiogram.enums import ParseMode
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import (
+    Command,
+    CommandStart,
+)
 from aiogram.utils.markdown import hbold
 from dotenv import (
     find_dotenv,
     load_dotenv,
 )
 
+from goga.gigachat.agents import get_goga_answer
 from goga.utils import get_images_directory
 
 load_dotenv(find_dotenv())
 
 API_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
+PAVEL_ID = 161423914
 DEVELOPMENT_CHAT_ID = -4831473627
 
 PRIVATE_ANSWER= """Я - Гога, сын Giga, в том смысле, что я создан на базе LLM моделей GigaChat. """ \
@@ -62,8 +67,8 @@ async def send_message_with_photo(message: types.Message):
 @dp.message(Command(commands=['start', 'info']))
 async def send_welcome(message: types.Message):
     """Реакция на команды /start и /info"""
-    if message.chat.type != 'private':
-        return
+    #if message.chat.type != 'private' or message.chat.id != DEVELOPMENT_CHAT_ID:
+    #    return
     await send_message_with_photo(message)
 
 
@@ -79,14 +84,29 @@ async def handle_group_message(message: types.Message):
     """Обработка групповых сообщений"""
     if message.chat.id != DEVELOPMENT_CHAT_ID:
         logger.info(f'Got message from unknown chat {message.chat.id}')
-        return
+        # return
     if not message.text:
         return
     if 'Гога' not in message.text:
         return
-    answer = get_goga_answer(message.text)
+    if message.from_user.id != PAVEL_ID:
+        return
+    await handle_goga_answer(message)
+
+
+async def handle_goga_answer(message: types.Message):
+    """Получить и отправить ответ от Гоги"""
+    logger.info(f'Got message from user {message.from_user}: {message.text}')
+    answer = await get_goga_answer(message.chat.id, message.text)
     if isinstance(answer, str):
-        await bot.send_message(message.chat.id, answer)
+        if 'Позвольте поприветствовать вас словами в виде тоста!' in answer:
+            file_path = get_images_directory() / 'goga-toast.jpg'
+            file = types.FSInputFile(path=file_path)
+            await bot.send_photo(
+                message.chat.id,
+                file,
+            )
+        await bot.send_message(message.chat.id, answer, parse_mode=ParseMode.MARKDOWN)
     if hasattr(answer, 'text'):
         await bot.send_message(message.chat.id, answer.text)
     if hasattr(answer, 'photo'):
