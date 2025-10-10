@@ -121,7 +121,7 @@ async def handle_private_message(message: types.Message):
     await send_welcome(message)
 
 
-async def main():
+async def run():
     """Запуск бота"""
     await dp.start_polling(bot)
 

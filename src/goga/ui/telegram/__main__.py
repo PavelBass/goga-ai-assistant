@@ -3,7 +3,7 @@ import logging
 import subprocess
 import sys
 
-from .aiogram import main
+from .aiogram import run
 
 #subprocess.run(
 #    [
@@ -19,5 +19,5 @@ from .aiogram import main
 #    capture_output=True,
 #)
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-asyncio.run(main())
+asyncio.run(run())
 
