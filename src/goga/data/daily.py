@@ -51,7 +51,7 @@ class Daily(BaseModel):
 class DailyStandupParticipantsRepository:
     """Репозиторий данных участников дейли"""
 
-    def __init__(self, file_path: str = 'dailydb.json') -> None:
+    def __init__(self, file_path: str | Path = 'dailydb.json') -> None:
         self._path = Path(file_path)
 
     def __repr__(self) -> str:

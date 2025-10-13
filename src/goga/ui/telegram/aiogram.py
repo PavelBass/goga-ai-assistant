@@ -2,6 +2,7 @@
 import logging
 import os
 
+import rich
 from aiogram import (
     Bot,
     Dispatcher,
@@ -17,15 +18,15 @@ from dotenv import (
     find_dotenv,
     load_dotenv,
 )
+from rich.logging import RichHandler
 
+from goga import config 
 from goga.gigachat.agents import get_goga_answer
 from goga.utils import get_images_directory
 
 load_dotenv(find_dotenv())
 
 API_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
-PAVEL_ID = 161423914
-DEVELOPMENT_CHAT_ID = -4903305713
 
 PRIVATE_ANSWER= """Я - Гога, сын Giga, в том смысле, что я создан на базе LLM моделей GigaChat. """ \
     """Моя основная задача помогать команде разработки RAG-слоя в решении различных вопросов, """ \
@@ -50,7 +51,8 @@ PRIVATE_ANSWER= """Я - Гога, сын Giga, в том смысле, что я
 https://github.com/PavelBass/goga-ai-assistant
 """
 
-logger = logging.getLogger('Goga')
+logger = logging.getLogger('Goga aiogram')
+logger.addHandler(RichHandler())
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
@@ -69,9 +71,14 @@ async def send_message_with_photo(message: types.Message):
 
 @dp.message(Command(commands=['start', 'info']))
 async def send_welcome(message: types.Message):
-    """Реакция на команды /start и /info"""
-    #if message.chat.type != 'private' or message.chat.id != DEVELOPMENT_CHAT_ID:
-    #    return
+    """Реакция на команды /start и /info
+
+    Команды разрешены только в личных сообщениях и в чатах разработки
+    """
+    if message.chat.type != 'private':
+        return
+    if message.chat.id not in config.CONFIG['chats']['development']:
+        return
     await send_message_with_photo(message)
 
 
@@ -79,20 +86,43 @@ async def send_welcome(message: types.Message):
 async def message(message: types.Message):
     """Реакция на любое сообщение"""
     if message.chat.type == 'private':
-        return
+        return await handle_private_message(message)
     await handle_group_message(message)
-     
+
+
+async def handle_private_message(message: types.Message):
+    """Обработка личных сообщений бота
+
+    Общаться с ботом в личке могут только разработчики
+    """
+    if not message.from_user:
+        return
+    if message.from_user.username not in {user['username'] for user in config.CONFIG['users']['developers']}:
+        # TODO: Use rich logger
+        rich.print(f'Got message from unknown user {message.from_user.username}')
+        rich.print(config.CONFIG)
+        return
+    await handle_goga_answer(message)
+
 
 async def handle_group_message(message: types.Message):
     """Обработка групповых сообщений"""
-    if message.chat.id != DEVELOPMENT_CHAT_ID:
-        logger.info(f'Got message from unknown chat {message.chat.id}')
-        # return
+    if not (message.chat.id in config.CONFIG['chats']['development']
+            or message.chat.id in config.CONFIG['chats']['production']):
+        logger.info(f'Got message from unknown chat {message.chat.id} - {message.chat.full_name}')
+        logger.info(f'Chats config: {config.CONFIG["chats"]}')
+        return
     if not message.text:
+        logger.debug(f'Got message without text from chat {message.chat.full_name}')
         return
     if 'Гога' not in message.text:
+        # К Гоге не обращаются
         return
-    if message.from_user.id != PAVEL_ID:
+    if not message.from_user:
+        # Сообщение не от пользователя (бот, например)
+        return
+    if message.from_user.username not in {user['username'] for user in config.CONFIG['users']['customers']}:
+        # Обращается к Гоге не заказчик функционала (пользователь)
         return
     await handle_goga_answer(message)
 
@@ -114,11 +144,6 @@ async def handle_goga_answer(message: types.Message):
         await bot.send_message(message.chat.id, answer.text)
     if hasattr(answer, 'photo'):
         await bot.send_photo(message.chat.id, answer.photo)
-
-
-async def handle_private_message(message: types.Message):
-    """Обработка приватных сообщений"""
-    await send_welcome(message)
 
 
 async def run():

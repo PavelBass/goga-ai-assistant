@@ -4,13 +4,14 @@
         { name = "Pavel Bass", email = "basspv@vk.com" },
     ]
     description = "Гога, сын Giga - AI-ассистент команды разработки RAG-слоя компании Сибур"
-    version = "0.1.0"
+    version = "0.2.0"
     dependencies = [
         "aiogram==3.22.0",
         "langchain==0.3.27",
         "langchain_gigachat==0.3.12",
         "langgraph==0.6.10",
         "python-dotenv==1.1.1",
+        "rich==14.2.0",
         "telethon==1.41.2",
     ]
     readme = "README.md"

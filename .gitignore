@@ -309,3 +309,6 @@ cypress/screenshots
 
 # daily db
 dailydb.json
+
+# configuration
+config.toml
