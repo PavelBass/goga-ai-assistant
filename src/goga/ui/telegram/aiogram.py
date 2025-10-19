@@ -14,14 +14,17 @@ from aiogram.filters import (
     CommandStart,
 )
 from aiogram.utils.markdown import hbold
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import (
     find_dotenv,
     load_dotenv,
 )
 from rich.logging import RichHandler
 
-from goga import config 
+from goga import config
 from goga.gigachat.agents import get_goga_answer
+from goga.ui.telegram.tasks import say_about_daily_standup_leader
 from goga.utils import get_images_directory
 
 load_dotenv(find_dotenv())
@@ -148,5 +151,12 @@ async def handle_goga_answer(message: types.Message):
 
 async def run():
     """Запуск бота"""
+    scheduler = AsyncIOScheduler()
+    job = scheduler.add_job(
+        func=say_about_daily_standup_leader,
+        args=[bot],
+        trigger=CronTrigger.from_crontab('0 8 * * mon-fri'),
+    )
+    scheduler.start()
     await dp.start_polling(bot)
 
