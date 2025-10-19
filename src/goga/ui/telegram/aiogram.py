@@ -1,6 +1,8 @@
 """Взаимодействие с Гогой через Telegramm на базе aiogram"""
+import json
 import logging
 import os
+from pathlib import Path
 
 import rich
 from aiogram import (
@@ -78,12 +80,30 @@ async def send_welcome(message: types.Message):
 
     Команды разрешены только в личных сообщениях и в чатах разработки
     """
-    if message.chat.type != 'private':
-        return
-    if message.chat.id not in config.CONFIG['chats']['development']:
+    if not (
+        message.chat.id in config.CONFIG['chats']['development']
+        or message.chat.id in config.CONFIG['users']['developers']
+    ):
         return
     await send_message_with_photo(message)
 
+
+@dp.message(Command('dailydb'))
+async def show_dailydb(message: types.Message):
+    """Реакция на команду /dailydb
+
+    Команды разрешены только в личных сообщениях и в чатах разработки
+    """
+    if not (
+        message.chat.id in config.CONFIG['chats']['development']
+        or message.chat.id in config.CONFIG['users']['developers']
+    ):
+        return
+    dailydb_file = config.CONFIG['db']['daily']
+    dailydb_path = Path(dailydb_file)
+    data = json.loads(dailydb_path.read_text())
+    content = '```python\n' + json.dumps(data, indent=2, ensure_ascii=False) + '\n```'
+    await bot.send_message(message.chat.id, content, parse_mode=ParseMode.MARKDOWN)
 
 @dp.message()
 async def message(message: types.Message):
@@ -156,6 +176,7 @@ async def run():
         func=say_about_daily_standup_leader,
         args=[bot],
         trigger=CronTrigger.from_crontab('0 8 * * mon-fri'),
+        #trigger=CronTrigger.from_crontab('*/1 * * * *'),  # удобно для ручного тестирования
     )
     scheduler.start()
     await dp.start_polling(bot)
