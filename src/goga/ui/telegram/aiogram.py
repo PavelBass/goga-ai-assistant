@@ -15,7 +15,6 @@ from aiogram.filters import (
     Command,
     CommandStart,
 )
-from aiogram.utils.markdown import hbold
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import (
@@ -40,10 +39,10 @@ PRIVATE_ANSWER= """Я - Гога, сын Giga, в том смысле, что я
 
 На сегодняшний день, в личных сообщениях я отвечаю только этим приветствием. """ \
     """Чтобы получить от меня обдуманный ответ, необходимо явно ко мне обратиться по имени в чате разработки RAG-слоя. """ \
-    f"""Например так
-> {hbold('Гога, что такое RAG-слой?')}
+    """Например так
+> **'Гога, что такое RAG-слой?'**
 или так
-> {hbold('Добавь пользователя Василия, Гога, в список участников дейли')}
+> **'Добавь пользователя Василия, Гога, в список участников дейли'**
 
 Мой создатель - Павел Басс (@Kademn), один из программистов команды разработки RAG-слоя. Он создал меня и непрерывно улучшает """ \
     """не только с целью дать команде удобного в использовании и полезного AI-ассистента, но также для того, """ \
@@ -71,7 +70,7 @@ async def send_message_with_photo(message: types.Message):
         reply_to_message_id=message.message_id
     )
     greeting = f'Привет, {hbold(message.from_user.full_name)}!\n'
-    await bot.send_message(message.chat.id, greeting + PRIVATE_ANSWER, parse_mode=ParseMode.HTML)
+    await bot.send_message(message.chat.id, greeting + PRIVATE_ANSWER, parse_mode=ParseMode.MARKDOWN)
 
 
 @dp.message(Command(commands=['start', 'info']))
@@ -168,7 +167,7 @@ async def handle_goga_answer(message: types.Message):
             )
         await bot.send_message(message.chat.id, answer, parse_mode=ParseMode.MARKDOWN)
     if hasattr(answer, 'text'):
-        await bot.send_message(message.chat.id, answer.text)
+        await bot.send_message(message.chat.id, answer.text, parse_mode=ParseMode.MARKDOWN)
     if hasattr(answer, 'photo'):
         await bot.send_photo(message.chat.id, answer.photo)
 

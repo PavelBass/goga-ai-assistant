@@ -24,7 +24,7 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     :param bot: экземпляр Телеграм бота
     """
     repository = get_or_create_repository()
-    leader = repository.today_dayly_standup_leader
+    leader = repository.today_daily_standup_moderator
     prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
     prompt += 'рассказывать команде о том кто ведущий сегодняшнего Daily Standup в командном чате. '
     prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь сказать команде, '

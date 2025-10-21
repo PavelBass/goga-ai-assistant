@@ -6,9 +6,9 @@ from langgraph.prebuilt import create_react_agent
 from .models import create_gigachat_model
 from .tools import (
     add_daily_standup_participants,
-    force_change_today_daily_standup_participant,
+    force_change_today_daily_standup_moderator,
     get_daily_standup_participants,
-    get_today_daily_standup_participant,
+    get_today_daily_standup_moderator,
 )
 
 SYSTEM_PROMPT = """Ты AI-ассистент по имени Гога, сын Giga (в том смысле, что ты построен на базе LLM моделей GigaChat). Ты дружелюбен и эмпатичен.
@@ -37,8 +37,8 @@ SYSTEM_PROMPT = """Ты AI-ассистент по имени Гога, сын G
 tools = [
     add_daily_standup_participants,
     get_daily_standup_participants,
-    get_today_daily_standup_participant,
-    force_change_today_daily_standup_participant
+    get_today_daily_standup_moderator,
+    force_change_today_daily_standup_moderator
 ]
 
 agent = create_react_agent(

@@ -30,13 +30,13 @@ def get_daily_standup_participants() -> str:
     return ', '.join(get_or_create_repository().get_all_participants())
 
 @tool
-def get_today_daily_standup_participant() -> str:
+def get_today_daily_standup_moderator() -> str:
     """Возвращает сегодняшнего ведущего Daily Standup"""
-    return get_or_create_repository().today_dayly_standup_leader
+    return get_or_create_repository().today_daily_standup_moderator
 
 @tool
-def force_change_today_daily_standup_participant() -> str:
+def force_change_today_daily_standup_moderator() -> str:
     """Принудительно меняет назначенного ранее ведущего Daily Standup на сегодня"""
-    get_or_create_repository().force_change_today_random_participant()
-    return get_or_create_repository().today_dayly_standup_leader
+    get_or_create_repository().force_change_today_daily_standup_moderator()
+    return get_or_create_repository().today_daily_standup_moderator
 

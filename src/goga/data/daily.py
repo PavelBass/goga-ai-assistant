@@ -51,7 +51,7 @@ class Pretendents:
         return self._is_shuffled
 
     @property
-    def leader(self) -> str | None:
+    def moderator(self) -> str | None:
         """Ведущий дейли"""
         return self._participants[-1] if self._participants else None
 
@@ -109,7 +109,11 @@ class DailyState(BaseModel):
     """Состояние назначений ведущих дейли"""
 
     pretendents: Pretendents = Field(default_factory=Pretendents)
-    changed_at: float = Field(default_factory=time.time)
+
+    @property
+    def changed_at(self) -> float | None:
+        """Timestamp изменения списка ведущих дейли"""
+        return self.pretendents.changed_at
 
     def set_pretendents(self, participants: Iterable[str]) -> None:
         """Установить список претендентов на роль ведущего дейли"""
@@ -137,7 +141,7 @@ class Daily(BaseModel):
         """Добавить участников дейли"""
         self.participants.update(participants)
 
-    def change_daily_standup_leader(self) -> None:
+    def change_daily_standup_moderator(self) -> None:
         """Сменить ведущего дейли"""
         if not self.state.pretendents:
             self.state.set_pretendents(self.participants)
@@ -145,16 +149,16 @@ class Daily(BaseModel):
             self.state.pretendents.pop()
 
     @property
-    def is_leader_chosen_today(self) -> bool:
+    def is_moderator_chosen_today(self) -> bool:
         """Выбран ли ведущий дейли в сегодняшний день"""
-        leader_is_chosen_at = dt.datetime.fromtimestamp(self.state.changed_at)
+        moderator_is_chosen_at = dt.datetime.fromtimestamp(self.state.changed_at)
         today = dt.datetime.now()
-        return leader_is_chosen_at.day == today.day
+        return moderator_is_chosen_at.day == today.day
 
     @property
-    def daily_standup_leader(self) -> str | None:
+    def daily_standup_moderator(self) -> str | None:
         """Ведущий дейли"""
-        return self.state.pretendents.leader
+        return self.state.pretendents.moderator
 
 
 class DailyStandupParticipantsRepository:
@@ -205,18 +209,18 @@ class DailyStandupParticipantsRepository:
         return self.data.participants.copy()
 
     @property
-    def today_dayly_standup_leader(self) -> str:
-        """Сегодняшний ведущий дейли"""
-        if not self.data.daily_standup_leader:
-            self.data.change_daily_standup_leader()
+    def today_daily_standup_moderator(self) -> str:
+        """Сегодняшний ведущий Daily Standup"""
+        if not self.data.daily_standup_moderator:
+            self.data.change_daily_standup_moderator()
             self._save_data()
-        if not self.data.is_leader_chosen_today:
-            self.data.change_daily_standup_leader()
+        if not self.data.is_moderator_chosen_today:
+            self.data.change_daily_standup_moderator()
             self._save_data()
-        return self.data.daily_standup_leader  # type: ignore
+        return self.data.daily_standup_moderator  # type: ignore
     
-    def force_change_today_random_participant(self) -> None:
-        """Сменить случайного ведущего дейли на сегодня"""
-        self.data.change_daily_standup_leader()
+    def force_change_today_daily_standup_moderator(self) -> None:
+        """Принудительно меняет назначенного ранее ведущего Daily Standup на сегодня"""
+        self.data.change_daily_standup_moderator()
         self._save_data()
 
