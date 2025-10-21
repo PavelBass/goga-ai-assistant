@@ -24,16 +24,19 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     :param bot: экземпляр Телеграм бота
     """
     repository = get_or_create_repository()
-    leader = repository.today_random_participant
+    leader = repository.today_dayly_standup_leader
     prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
     prompt += 'рассказывать команде о том кто ведущий сегодняшнего Daily Standup в командном чате. '
     prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь сказать команде, '
     prompt += f'что **{leader}** сегодня ведёт Daily Standup. '
-    prompt += 'Будь вежливым, позитивным и вдохновляющим. Начни с пожелания коллегам доброго дня. Не забудь в конце '
+    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. Не забудь в конце '
     prompt += 'рассказать интересный факт о любой технологии связанной с '
     prompt += 'искусственным интеллектом.'
-    prompt += 'Имя ведущего необходимо выделить жирным шрифтом в markdown.'
-    answer = await get_goga_answer(config.CONFIG['chats']['production'][0], prompt)
-    for chat_id in config.CONFIG['chats']['production']:
+    #prompt += 'Имя ведущего необходимо выделить жирным шрифтом в markdown.'
+    chats = config.CONFIG['chats']['development']
+    if config.CONFIG['general']['mode'] == 'production':
+        chats = config.CONFIG['chats']['production']
+    answer = await get_goga_answer(chats[0], prompt)
+    for chat_id in chats:
         await bot.send_message(chat_id, answer, parse_mode=ParseMode.MARKDOWN)
 

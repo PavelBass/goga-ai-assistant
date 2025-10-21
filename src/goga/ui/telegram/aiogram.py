@@ -135,6 +135,10 @@ async def handle_group_message(message: types.Message):
         logger.info(f'Got message from unknown chat {message.chat.id} - {message.chat.full_name}')
         logger.info(f'Chats config: {config.CONFIG["chats"]}')
         return
+    if config.CONFIG['general']['mode'] != 'production':
+        if message.chat.id not in config.CONFIG['chats']['development']:
+            logger.debug(f'Got message from chat {message.chat.full_name} in development mode. Skip message.')
+            return
     if not message.text:
         logger.debug(f'Got message without text from chat {message.chat.full_name}')
         return
@@ -171,12 +175,14 @@ async def handle_goga_answer(message: types.Message):
 
 async def run():
     """Запуск бота"""
+    trigger = CronTrigger.from_crontab('*/1 * * * *')
+    if config.CONFIG['general']['mode'] == 'production':
+        trigger = CronTrigger.from_crontab('0 8 * * mon-fri')
     scheduler = AsyncIOScheduler()
     job = scheduler.add_job(
         func=say_about_daily_standup_leader,
         args=[bot],
-        trigger=CronTrigger.from_crontab('0 8 * * mon-fri'),
-        #trigger=CronTrigger.from_crontab('*/1 * * * *'),  # удобно для ручного тестирования
+        trigger=trigger,
     )
     scheduler.start()
     await dp.start_polling(bot)
