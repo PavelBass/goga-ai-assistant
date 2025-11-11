@@ -2,11 +2,11 @@ from pathlib import Path
 
 from langchain.tools import tool
 
-from goga.data.daily import DailyStandupParticipantsRepository
+from goga.data.daily import DailyRepository
 
 _repository = None
 
-def get_or_create_repository(daily_db_json: Path | str | None = None) -> DailyStandupParticipantsRepository:
+def get_or_create_repository(daily_db_json: Path | str | None = None) -> DailyRepository:
     """Возвращает или создает репозиторий данных участников Daily Standup
 
     Позволяет инициировать репозиторий с необходимыми параметрами
@@ -15,13 +15,13 @@ def get_or_create_repository(daily_db_json: Path | str | None = None) -> DailySt
     if not _repository:
         if not daily_db_json:
             raise ValueError('daily_db_json is required')
-        _repository = DailyStandupParticipantsRepository(daily_db_json)
+        _repository = DailyRepository(daily_db_json)
     return _repository
 
 
 @tool
 def add_daily_standup_participants(participants: list[str]) -> None:
-    """Доавляет новых участников Daily Standup"""
+    """Добавляет новых участников Daily Standup"""
     get_or_create_repository().add_participants(participants)
 
 @tool

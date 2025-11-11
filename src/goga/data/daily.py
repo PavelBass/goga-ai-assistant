@@ -1,167 +1,171 @@
 import datetime as dt
 import json
+import random
 import time
+from collections import deque
 from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
-from random import shuffle
-from typing import Any
-
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    GetPydanticSchema,
-)
-from pydantic_core import (
-    CoreSchema,
-    PydanticCustomError,
-    core_schema,
-)
 
 
-class Pretendents:
-    """Список ведущих дейли"""
+class DailyState:
+    """Состояние списка ведущих дейли"""
 
     def __init__(
             self,
-            participants: Iterable[str] | None = None,
-            changed_at: float | None = None,
-            * ,
-            is_shuffled: bool = False
-    ):
-        """Инициализация класса Pretendents
-
-        Args:
-            participants: Список ведущих дейли
-            changed_at: Timestamp изменения списка ведущих дейли
-        """
-        self._participants = list(participants or [])
-        self._changed_at = changed_at
-        self._is_shuffled = is_shuffled
+            pretendents: Iterable[str] | None = None,
+            increased_at: float | None = None,
+            decreased_at: float | None = None,
+    ) -> None:
+        """Инициализация класса Pretendents"""
+        if pretendents is not None:
+            if not all([increased_at, decreased_at]):
+                raise ValueError('Both increased_at and decreased_at must be provided for pretendents')
+        self._pretendents = deque(pretendents) if pretendents else deque()
+        now = time.time
+        self._increased_at = increased_at or now
+        self._decreased_at = decreased_at or now
 
     @property
-    def changed_at(self) -> float | None:
-        """Timestamp изменения списка ведущих дейли"""
-        return self._changed_at
+    def increased_at(self) -> float:
+        """Время последнего увеличения списка ведущих дейли"""
+        return self._increased_at
 
     @property
-    def is_shuffled(self) -> bool:
-        """Был ли список ведущих дейли перемешан"""
-        return self._is_shuffled
+    def decreased_at(self) -> float:
+        """Время последнего уменьшения списка ведущих дейли"""
+        return self._decreased_at
 
     @property
-    def moderator(self) -> str | None:
-        """Ведущий дейли"""
-        return self._participants[-1] if self._participants else None
+    def has_members(self) -> bool:
+        """Есть ли участники в списке ведущих дейли"""
+        return bool(self)
 
-    def __iter__(self):
-        """Итератор списка ведущих дейли"""
-        return iter(self._participants)
+    def add_member(self, member: str) -> None:
+        """Добавить претенденда"""
+        self._pretendents.append(member)
+        self._increased_at = time.time()
 
-    def __len__(self):
-        """Длина списка ведущих дейли"""
-        return len(self._participants)
+    def add_members(self, members: Iterable[str], *, shuffle: bool = True) -> None:
+        """Добавить несколько претендентов"""
+        members = list(members)
+        if not members:
+            return
+        if shuffle:
+            random.shuffle(members)
+            if self.current_pretendent and len(members) > 1:
+                while members[0] == self.current_pretendent:
+                    random.shuffle(members)
+        self._pretendents.extend(members)
+        self._increased_at = time.time()
+
+    @property
+    def current_pretendent(self) -> str | None:
+        """Ближайший претендент"""
+        return self._pretendents[0] if self._pretendents else None
+
+    @property
+    def next_pretendent(self) -> str | None:
+        """Следующий претендент"""
+        return self._pretendents[1] if len(self._pretendents) > 1 else None
 
     def __bool__(self):
-        """Приведение списка ведущих дейли к булевому типу"""
-        return bool(self._participants)
+        """Приведение списка претендентов на роль ведущего дейли к булевому типу"""
+        return bool(self._pretendents)
 
     def __repr__(self):
         """Однозначное строковое представление"""
-        return f'Pretendents(participants={self._participants}, '\
-            f'changed_at={self._changed_at}, is_shuffled={self._is_shuffled})'
+        return f'Pretendents(participants={self._pretendents}, increased_at={self._increased_at}, decreased_at={self._decreased_at})'
 
-    def pop(self):
-        """Удалить последнего ведущего дейли"""
-        participant = self._participants.pop()
-        self._changed_at = time.time()
-        return participant
+    def pop(self) -> str | None:
+        """Извлечь ближайшего претендента"""
+        pretendent = None
+        if self._pretendents:
+            pretendent = self._pretendents.popleft()
+            self._decreased_at = time.time()
+        return pretendent
+
+    def as_dict(self) -> dict:
+        """Преобразование в словарь"""
+        return {
+            'pretendents': list(self._pretendents),
+            'increased_at': self._increased_at,
+            'decreased_at': self._decreased_at,
+        }
 
     @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetPydanticSchema
-    ) -> CoreSchema:
-        def validate_pretendents(value: Any) -> Pretendents:
-            if isinstance(value, Pretendents):
-                return value
-            if isinstance(value, dict):
-                return Pretendents(
-                    participants=value.get('participants'),
-                    changed_at=value.get('changed_at'),
-                    is_shuffled=value.get('is_shuffled', False)
-                )
-            raise PydanticCustomError(
-                'pretendents_type', f'Input should be a list, tuple, set, or FrozenList, got {type(value)}',
-                {'kind': 'ValueError'}
-            )
-
-        return core_schema.no_info_after_validator_function(
-            validate_pretendents,
-            core_schema.dict_schema(),  # Initial schema to pass to the validator
-            serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda obj: {'participants': list(obj), 'changed_at': obj.changed_at, 'is_shuffled': obj.is_shuffled}
-            ),
+    def from_dict(cls, data: dict):
+        """Инициализация из словаря"""
+        return cls(
+            pretendents=data['pretendents'],
+            increased_at=data['increased_at'],
+            decreased_at=data['decreased_at'],
         )
 
+class Daily:
+    """Дейли"""
 
-class DailyState(BaseModel):
-    """Состояние назначений ведущих дейли"""
-
-    pretendents: Pretendents = Field(default_factory=Pretendents)
-
-    @property
-    def changed_at(self) -> float | None:
-        """Timestamp изменения списка ведущих дейли"""
-        return self.pretendents.changed_at
-
-    def set_pretendents(self, participants: Iterable[str]) -> None:
-        """Установить список претендентов на роль ведущего дейли"""
-        self.pretendents = Pretendents(participants)
-    
-    model_config = ConfigDict(
-        json_encoders={
-            Pretendents: lambda obj: {
-                'participants': list(obj),
-                'changed_at': obj.changed_at,
-                'is_shuffled': obj.is_shuffled
-            }
-        }
-    )
-
-
-
-class Daily(BaseModel):
-    """Участники дейли"""
-
-    participants: set[str] = Field(default_factory=set)
-    state: DailyState = Field(default_factory=DailyState)
+    def __init__(self, state: DailyState | None = None) -> None:
+        self._state = state or DailyState()
+        self._participants = set()
 
     def add_participants(self, participants: list[str]) -> None:
         """Добавить участников дейли"""
-        self.participants.update(participants)
+        self._participants.update(participants)
+
+    def get_all_participants(self) -> set[str]:
+        """Получить всех участников дейли"""
+        return self._participants.copy()
+
+    def garantee_pretendents_fullness(self) -> None:
+        """Обеспечить полноту списка ведущих дейли"""
+        if not self._state.next_pretendent:
+            self._state.add_members(self._participants, shuffle=True)
 
     def change_daily_standup_moderator(self) -> None:
         """Сменить ведущего дейли"""
-        if not self.state.pretendents:
-            self.state.set_pretendents(self.participants)
-        else:
-            self.state.pretendents.pop()
+        self.garantee_pretendents_fullness()
+        self._state.pop()
+        self.garantee_pretendents_fullness()
 
     @property
     def is_moderator_chosen_today(self) -> bool:
         """Выбран ли ведущий дейли в сегодняшний день"""
-        moderator_is_chosen_at = dt.datetime.fromtimestamp(self.state.changed_at)
+        if not self._state.has_members:
+            return False
+        moderator_is_chosen_at = dt.datetime.fromtimestamp(self._state.decreased_at)
         today = dt.datetime.now()
-        return moderator_is_chosen_at.day == today.day
+        return (
+                moderator_is_chosen_at.day == today.day
+                and moderator_is_chosen_at.month == today.month
+                and moderator_is_chosen_at.year == today.year
+        )
 
     @property
     def daily_standup_moderator(self) -> str | None:
         """Ведущий дейли"""
-        return self.state.pretendents.moderator
+        return self._state.current_pretendent
+
+    def as_dict(self):
+        """Преобразование в словарь"""
+        return {
+            'participants': list(self._participants),
+            'state': self._state.as_dict(),
+        }
+
+    def as_json(self):
+        """Преобразование в JSON"""
+        return json.dumps(self.as_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Инициализация из словаря"""
+        instance = cls(state=DailyState.from_dict(data['state']))
+        instance.add_participants(data['participants'])
+        return instance
 
 
-class DailyStandupParticipantsRepository:
+class DailyRepository:
     """Репозиторий данных участников дейли"""
 
     def __init__(self, file_path: str | Path = 'dailydb.json') -> None:
@@ -182,12 +186,12 @@ class DailyStandupParticipantsRepository:
         if not self._path.is_file():
             self._initiate_data()
         text = self._path.read_text()
-        data = json.loads(text)
-        return Daily(**data)
+        data = json.loads(text or '{}')
+        return Daily.from_dict(data)
 
     def _initiate_data(self) -> None:
         """Инициализация базы данных участников дейли"""
-        json_data = Daily().model_dump_json()
+        json_data = Daily().as_json()
         try:
             with open(self._path, 'w') as data_file:
                 data_file.write(json_data)
@@ -197,7 +201,7 @@ class DailyStandupParticipantsRepository:
     def _save_data(self) -> None:
         """Сохранить данные участников дейли в файл"""
         with open(self._path, 'w') as data_file:
-            data_file.write(self.data.model_dump_json())
+            data_file.write(self.data.as_json())
 
     def add_participants(self, participants: list[str]) -> None:
         """Добавить участников дейли"""
@@ -206,17 +210,13 @@ class DailyStandupParticipantsRepository:
 
     def get_all_participants(self) -> set[str]:
         """Получить всех участников дейли"""
-        return self.data.participants.copy()
+        return self.data.get_all_participants()
 
     @property
     def today_daily_standup_moderator(self) -> str:
         """Сегодняшний ведущий Daily Standup"""
-        if not self.data.daily_standup_moderator:
-            self.data.change_daily_standup_moderator()
-            self._save_data()
         if not self.data.is_moderator_chosen_today:
-            self.data.change_daily_standup_moderator()
-            self._save_data()
+            self.force_change_today_daily_standup_moderator()
         return self.data.daily_standup_moderator  # type: ignore
     
     def force_change_today_daily_standup_moderator(self) -> None:
