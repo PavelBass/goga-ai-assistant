@@ -35,6 +35,11 @@ def get_today_daily_standup_moderator() -> str:
     return get_or_create_repository().today_daily_standup_moderator
 
 @tool
+def get_next_pretendent_to_be_daily_standup_moderator() -> str:
+    """Возвращает претендента быть следующим ведущим Daily Standup"""
+    return get_or_create_repository().tomorrow_daily_standup_moderator
+
+@tool
 def force_change_today_daily_standup_moderator() -> str:
     """Принудительно меняет назначенного ранее ведущего Daily Standup на сегодня"""
     get_or_create_repository().force_change_today_daily_standup_moderator()

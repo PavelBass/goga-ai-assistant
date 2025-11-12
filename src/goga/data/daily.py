@@ -146,6 +146,12 @@ class Daily:
         """Ведущий дейли"""
         return self._state.current_pretendent
 
+    @property
+    def next_daily_standup_moderator(self) -> str | None:
+        """Следующий ведущий дейли"""
+        self.garantee_pretendents_fullness()
+        return self._state.next_pretendent
+
     def as_dict(self):
         """Преобразование в словарь"""
         return {
@@ -218,6 +224,11 @@ class DailyRepository:
         if not self.data.is_moderator_chosen_today:
             self.force_change_today_daily_standup_moderator()
         return self.data.daily_standup_moderator  # type: ignore
+
+    @property
+    def tomorrow_daily_standup_moderator(self) -> str:
+        """Завтрашний ведущий Daily Standup"""
+        return self.data.next_daily_standup_moderator
     
     def force_change_today_daily_standup_moderator(self) -> None:
         """Принудительно меняет назначенного ранее ведущего Daily Standup на сегодня"""
