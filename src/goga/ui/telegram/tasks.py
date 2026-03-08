@@ -1,6 +1,7 @@
 """Периодические задачи"""
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from aiogram.types import LinkPreviewOptions
 
 from goga import config
 from goga.gigachat.agents import get_goga_answer
@@ -33,13 +34,19 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь сказать команде, '
     prompt += f'что {leader_display} сегодня ведёт Daily Standup. '
     prompt += f'Обязательно укажи в ответе упоминание {mention}, чтобы пользователь получил уведомление. '
-    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. Не забудь в конце '
-    prompt += 'рассказать интересный факт о любой технологии связанной с '
-    prompt += 'искусственным интеллектом.'
+    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. '
+    prompt += 'В продолжение фомрирования сообщения вызови инструмент get_news, чтобы получить новости. '
+    prompt += 'Если новости есть, предложи команде ознакомиться с ними: '
+    prompt += 'для каждой новости укажи заголовок, краткое описание (в точности как в было получено) и ссылку на оригинальную статью. '
+    prompt += 'Если новостей нет, расскажи интересный факт о любой технологии связанной с искусственным интеллектом.'
     chats = config.CONFIG['chats']['development']
     if config.CONFIG['general']['mode'] == 'production':
         chats = config.CONFIG['chats']['production']
     answer = await get_goga_answer(chats[0], prompt)
     for chat_id in chats:
-        await bot.send_message(chat_id, answer, parse_mode=ParseMode.MARKDOWN)
-
+        await bot.send_message(
+            chat_id,
+            answer,
+            parse_mode=ParseMode.MARKDOWN,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )

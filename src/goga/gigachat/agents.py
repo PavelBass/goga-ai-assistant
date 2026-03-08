@@ -8,6 +8,7 @@ from .tools import (
     add_daily_standup_participants,
     force_change_today_daily_standup_moderator,
     get_daily_standup_participants,
+    get_news,
     get_today_daily_standup_moderator,
 )
 
@@ -38,7 +39,8 @@ tools = [
     add_daily_standup_participants,
     get_daily_standup_participants,
     get_today_daily_standup_moderator,
-    force_change_today_daily_standup_moderator
+    force_change_today_daily_standup_moderator,
+    get_news,
 ]
 
 agent = create_react_agent(

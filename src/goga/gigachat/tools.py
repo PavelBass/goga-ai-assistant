@@ -4,6 +4,7 @@ from langchain.tools import tool
 from pydantic import BaseModel, Field
 
 from goga.data.daily import DailyRepository
+from goga.data.news import NewsRepository
 
 
 class Participant(BaseModel):
@@ -13,6 +14,16 @@ class Participant(BaseModel):
     name: str = Field(description='Имя участника, например: Павел')
 
 _repository = None
+_news_repository = None
+
+def get_or_create_news_repository(news_dir: Path | str | None = None) -> NewsRepository:
+    """Возвращает или создает репозиторий новостей"""
+    global _news_repository
+    if not _news_repository:
+        if not news_dir:
+            raise ValueError('news_dir is required')
+        _news_repository = NewsRepository(news_dir)
+    return _news_repository
 
 def get_or_create_repository(daily_db_json: Path | str | None = None) -> DailyRepository:
     """Возвращает или создает репозиторий данных участников Daily Standup
@@ -70,4 +81,23 @@ def force_change_today_daily_standup_moderator() -> str:
     repository = get_or_create_repository()
     repository.force_change_today_daily_standup_moderator()
     return _format_moderator(repository, repository.today_daily_standup_moderator)
+
+@tool
+def get_news() -> str:
+    """Возвращает список непрочитанных новостей (не более 7) для ежедневного сообщения.
+
+    Каждая новость содержит заголовок, краткое описание и ссылку на оригинальную статью.
+    Новости отсортированы от старых к новым. После вызова этого инструмента новости
+    считаются показанными и перемещаются в архив.
+    Если новостей нет, возвращает пустую строку.
+    """
+    news_repo = get_or_create_news_repository()
+    items = news_repo.get_news(limit=7)
+    if not items:
+        return ''
+    news_repo.mark_as_seen(limit=7)
+    parts = []
+    for i, item in enumerate(items, 1):
+        parts.append(f'<Новость {i}>\n{item}')
+    return '\n\n'.join(parts)
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from goga import config
 from goga.config import initiate_config
-from goga.gigachat.tools import get_or_create_repository
+from goga.gigachat.tools import get_or_create_news_repository, get_or_create_repository
 from goga.ui.telegram.aiogram.run import run_telegram_bot
 
 
@@ -34,6 +34,7 @@ def main():
     arguments = get_arguments()
     initiate_config(arguments.configuration)
     get_or_create_repository(config.CONFIG['db']['daily'])
+    get_or_create_news_repository(config.CONFIG['db']['news'])
 
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     asyncio.run(run_telegram_bot())
