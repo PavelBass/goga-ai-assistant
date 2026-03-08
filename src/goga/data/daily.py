@@ -107,20 +107,28 @@ class Daily:
 
     def __init__(self, state: DailyState | None = None) -> None:
         self._state = state or DailyState()
-        self._participants = set()
+        self._participants: dict[str, str] = {}
 
-    def add_participants(self, participants: list[str]) -> None:
-        """Добавить участников дейли"""
+    def add_participants(self, participants: dict[str, str]) -> None:
+        """Добавить участников дейли
+
+        Args:
+            participants: словарь {username в Telegram: имя}
+        """
         self._participants.update(participants)
 
-    def get_all_participants(self) -> set[str]:
+    def get_all_participants(self) -> dict[str, str]:
         """Получить всех участников дейли"""
         return self._participants.copy()
+
+    def get_name(self, username: str) -> str | None:
+        """Получить имя участника по username"""
+        return self._participants.get(username)
 
     def garantee_pretendents_fullness(self) -> None:
         """Обеспечить полноту списка ведущих дейли"""
         if not self._state.next_pretendent:
-            self._state.add_members(self._participants, shuffle=True)
+            self._state.add_members(self._participants.keys(), shuffle=True)
 
     def change_daily_standup_moderator(self) -> None:
         """Сменить ведущего дейли"""
@@ -155,7 +163,7 @@ class Daily:
     def as_dict(self):
         """Преобразование в словарь"""
         return {
-            'participants': list(self._participants),
+            'participants': self._participants,
             'state': self._state.as_dict(),
         }
 
@@ -167,7 +175,10 @@ class Daily:
     def from_dict(cls, data: dict):
         """Инициализация из словаря"""
         instance = cls(state=DailyState.from_dict(data['state']))
-        instance.add_participants(data['participants'])
+        participants = data['participants']
+        if isinstance(participants, list):
+            participants = {name: name for name in participants}
+        instance.add_participants(participants)
         return instance
 
 
@@ -209,14 +220,18 @@ class DailyRepository:
         with open(self._path, 'w') as data_file:
             data_file.write(self.data.as_json())
 
-    def add_participants(self, participants: list[str]) -> None:
+    def add_participants(self, participants: dict[str, str]) -> None:
         """Добавить участников дейли"""
         self.data.add_participants(participants)
         self._save_data()
 
-    def get_all_participants(self) -> set[str]:
+    def get_all_participants(self) -> dict[str, str]:
         """Получить всех участников дейли"""
         return self.data.get_all_participants()
+
+    def get_name(self, username: str) -> str | None:
+        """Получить имя участника по username"""
+        return self.data.get_name(username)
 
     @property
     def today_daily_standup_moderator(self) -> str:
