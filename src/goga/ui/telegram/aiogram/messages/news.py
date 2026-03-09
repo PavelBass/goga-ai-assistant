@@ -122,8 +122,9 @@ async def list_news(message: types.Message):
 
     lines = []
     current_day = 0
+    limit = config.CONFIG['news']['limit']
     for index, filename, content in items:
-        day_number = (index - 1) // 7 + 1
+        day_number = (index - 1) // limit + 1
         if day_number != current_day:
             current_day = day_number
             lines.append(f'\n*День показа {day_number}:*')
