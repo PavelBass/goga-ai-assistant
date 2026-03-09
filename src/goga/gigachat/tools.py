@@ -2,6 +2,7 @@ from pathlib import Path
 
 from langchain.tools import tool
 from pydantic import BaseModel, Field
+from goga import config
 
 from goga.data.daily import DailyRepository
 from goga.data.news import NewsRepository
@@ -84,20 +85,23 @@ def force_change_today_daily_standup_moderator() -> str:
 
 @tool
 def get_news() -> str:
-    """Возвращает список непрочитанных новостей (не более 7) для ежедневного сообщения.
+    """Возвращает список непрочитанных новостей для ежедневного сообщения.
 
     Каждая новость содержит заголовок, краткое описание и ссылку на оригинальную статью.
     Новости отсортированы от старых к новым. После вызова этого инструмента новости
     считаются показанными и перемещаются в архив.
     Если новостей нет, возвращает пустую строку.
     """
+    limit = config.CONFIG['news']['limit']
     news_repo = get_or_create_news_repository()
-    items = news_repo.get_news(limit=7)
+    items = news_repo.get_news(limit=limit)
     if not items:
         return ''
-    news_repo.mark_as_seen(limit=7)
+    news_repo.mark_as_seen(limit=limit)
     parts = []
     for i, item in enumerate(items, 1):
-        parts.append(f'<Новость {i}>\n{item}')
+        first_line, content = item.split('\n', maxsplit=1)
+        first_line = first_line.lstrip('# ').strip()
+        parts.append(f'<news id={i}>\n<title>**{first_line}**</title>\n<description>{content}</description>\n</news>')
     return '\n\n'.join(parts)
 

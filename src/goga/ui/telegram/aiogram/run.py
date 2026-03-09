@@ -31,4 +31,9 @@ def build_bot_messages():
         show_dailydb,
     )
     from goga.ui.telegram.aiogram.messages.handlers import message
+    from goga.ui.telegram.aiogram.messages.news import (
+        add_news,
+        delete_news,
+        list_news,
+    )
 

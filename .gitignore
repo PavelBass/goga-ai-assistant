@@ -307,10 +307,10 @@ cypress/videos
 cypress/screenshots
 .vscode/settings.json
 
-# daily db
+# goga daily db
 dailydb.json
 
-# configuration
+# goga configuration
 config.toml
 
 CLAUDE.md

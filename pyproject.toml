@@ -4,7 +4,7 @@
         { name = "Pavel Bass", email = "basspv@vk.com" },
     ]
     description = "Гога, сын Giga - AI-ассистент команды разработки RAG-слоя компании Сибур"
-    version = "0.2.2"
+    version = "0.3.0"
     dependencies = [
         "aiogram==3.22.0",
         "apscheduler==3.11.0",
@@ -14,6 +14,7 @@
         "python-dotenv==1.1.1",
         "rich==14.2.0",
         "telethon==1.41.2",
+        "trafilatura==2.0.0",
     ]
     readme = "README.md"
     requires-python = ">= 3.13"

@@ -7,6 +7,7 @@ from aiogram import types
 from goga import config
 from goga.ui.telegram.aiogram.dispatcher import dp
 from goga.ui.telegram.aiogram.messages.goga import handle_goga_answer
+from goga.ui.telegram.aiogram.messages.news import add_news, delete_news, list_news
 
 logger = logging.getLogger('Goga aiogram')
 
@@ -30,6 +31,15 @@ async def handle_private_message(message: types.Message):
         rich.print(f'Got message from unknown user {message.from_user.username}')
         rich.print(config.CONFIG)
         return
+    if not message.text:
+        return
+    if message.from_user.username in {user['username'] for user in config.CONFIG['users']['customers']}:
+        if message.text.startswith('/news_add'):
+            return await add_news(message)
+        elif message.text.startswith('/news_delete'):
+            return await delete_news(message)
+        elif message.text.startswith('/news_list'):
+            return await list_news(message)
     await handle_goga_answer(message)
 
 
