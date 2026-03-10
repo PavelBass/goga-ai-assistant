@@ -1,8 +1,5 @@
 """Периодические задачи"""
-from aiogram import (
-    Bot,
-    html,
-)
+from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import LinkPreviewOptions
 
@@ -29,8 +26,9 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     """
     repository = get_or_create_repository()
     username = repository.today_daily_standup_moderator
+    safe_username = username.replace('_', '\\_')
     name = repository.get_name(username)
-    mention = f'@{html.quote(username)}'
+    mention = f'@{username}'
     leader_display = f'**{name}** ({mention})' if name else f'**{mention}**'
     prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
     prompt += 'рассказывать команде о том кто ведущий сегодняшнего Daily Standup в командном чате. '
@@ -49,6 +47,8 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     if config.CONFIG['general']['mode'] == 'production':
         chats = config.CONFIG['chats']['production']
     answer = await get_goga_answer(chats[0], prompt)
+    answer = answer.replace(username, safe_username)
+    print(answer)
     for chat_id in chats:
         await bot.send_message(
             chat_id,
