@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Гога, сын Giga — AI-ассистент команды</title>
+<meta name="description" content="Гога, сын Giga — дружелюбный AI-ассистент команды Умного Поиска Сибур на базе GigaChat. Ротация дейли, дайджест новостей, ответы в чате и HTTP API.">
+<meta property="og:title" content="Гога, сын Giga">
+<meta property="og:description" content="AI-ассистент команды Умного Поиска на базе GigaChat.">
+<meta property="og:image" content="images/goga-toast.jpg">
+<meta property="og:type" content="website">
+<link rel="icon" href="images/goga-kid_640x360.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
+<style>
+  :root{
+    --bg:#080b11;
+    --bg-2:#0c111a;
+    --panel:#101622;
+    --ink:#eaf1fb;
+    --muted:#8593a8;
+    --line:rgba(126,166,214,.10);
+    --cyan:#5cd0ff;
+    --cyan-deep:#2a93d6;
+    --amber:#ffb454;
+    --amber-deep:#ff8a3d;
+    --ok:#5be39b;
+    --radius:18px;
+    --maxw:1180px;
+    --ease:cubic-bezier(.2,.7,.2,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Golos Text',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    position:relative;
+  }
+  /* ---- Atmospheric background layers ---- */
+  body::before{ /* blueprint grid */
+    content:"";position:fixed;inset:0;z-index:-3;
+    background-image:
+      linear-gradient(var(--line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 35%,transparent 78%);
+  }
+  body::after{ /* gradient-mesh glow */
+    content:"";position:fixed;inset:0;z-index:-4;
+    background:
+      radial-gradient(60% 50% at 12% 4%, rgba(92,208,255,.16),transparent 60%),
+      radial-gradient(55% 55% at 92% 22%, rgba(255,138,61,.12),transparent 60%),
+      radial-gradient(70% 60% at 50% 110%, rgba(92,208,255,.10),transparent 60%),
+      linear-gradient(180deg,var(--bg),var(--bg-2));
+  }
+  .grain{ /* film grain overlay */
+    position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:.5;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E");
+    mix-blend-mode:overlay;
+  }
+  ::selection{background:var(--amber);color:#1a0e02}
+  a{color:inherit;text-decoration:none}
+
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+
+  /* ---- Header ---- */
+  header{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);background:rgba(8,11,17,.6)}
+  .nav{display:flex;align-items:center;justify-content:space-between;height:68px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:'Unbounded',sans-serif;font-weight:700;letter-spacing:.5px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(91,227,155,.16),0 0 12px var(--ok);animation:pulse 2.6s var(--ease) infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 7px rgba(91,227,155,0),0 0 16px var(--ok)}}
+  .nav-links{display:flex;gap:30px;align-items:center;font-size:.94rem;color:var(--muted)}
+  .nav-links a{transition:color .2s}
+  .nav-links a:hover{color:var(--cyan)}
+  .nav-cta{font-family:'JetBrains Mono',monospace;font-size:.82rem;border:1px solid var(--line);
+    padding:9px 16px;border-radius:10px;color:var(--ink);transition:.25s var(--ease)}
+  .nav-cta:hover{border-color:var(--cyan);box-shadow:0 0 26px rgba(92,208,255,.25);color:var(--cyan)}
+  @media(max-width:760px){.nav-links{display:none}}
+
+  /* ---- Hero ---- */
+  .hero{position:relative;padding:74px 0 96px;display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center}
+  @media(max-width:920px){.hero{grid-template-columns:1fr;gap:40px;padding:48px 0 70px}}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--cyan);display:inline-flex;align-items:center;gap:10px;margin-bottom:22px}
+  .kicker::before{content:"";width:26px;height:1px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+  h1{font-family:'Unbounded',sans-serif;font-weight:900;font-size:clamp(3.2rem,8vw,5.8rem);line-height:.94;letter-spacing:-1px}
+  h1 .sub{display:block;font-size:clamp(1rem,2.4vw,1.5rem);font-weight:500;color:var(--muted);letter-spacing:.04em;margin-top:14px}
+  h1 .sub b{color:var(--amber);font-weight:600}
+  .lead{color:var(--muted);font-size:1.12rem;max-width:30em;margin:26px 0 34px}
+  .lead b{color:var(--ink);font-weight:600}
+  .cta-row{display:flex;gap:14px;flex-wrap:wrap}
+  .btn{font-family:'Golos Text',sans-serif;font-weight:600;font-size:1rem;padding:14px 26px;border-radius:12px;
+    display:inline-flex;align-items:center;gap:10px;transition:.28s var(--ease);border:1px solid transparent}
+  .btn-primary{background:linear-gradient(135deg,var(--cyan),var(--cyan-deep));color:#04121d;
+    box-shadow:0 10px 34px -8px rgba(92,208,255,.55)}
+  .btn-primary:hover{transform:translateY(-3px);box-shadow:0 18px 44px -8px rgba(92,208,255,.7)}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--amber);color:var(--amber);box-shadow:0 0 30px rgba(255,138,61,.2)}
+  .arrow{transition:transform .28s var(--ease)}
+  .btn:hover .arrow{transform:translateX(4px)}
+
+  /* hero portrait */
+  .portrait{position:relative;aspect-ratio:16/10;border-radius:var(--radius);overflow:hidden;
+    border:1px solid rgba(126,166,214,.22);
+    box-shadow:0 30px 80px -30px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.03);
+    animation:float 7s ease-in-out infinite}
+  @keyframes float{50%{transform:translateY(-12px)}}
+  .portrait img{width:100%;height:100%;object-fit:cover;display:block;filter:saturate(1.05) contrast(1.04)}
+  .portrait::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,transparent 40%,rgba(8,11,17,.55))}
+  .frame-corner{position:absolute;width:22px;height:22px;border:2px solid var(--cyan);opacity:.8;z-index:3}
+  .fc-tl{top:14px;left:14px;border-right:0;border-bottom:0}
+  .fc-tr{top:14px;right:14px;border-left:0;border-bottom:0}
+  .fc-bl{bottom:14px;left:14px;border-right:0;border-top:0}
+  .fc-br{bottom:14px;right:14px;border-left:0;border-top:0}
+  .chip{position:absolute;z-index:4;font-family:'JetBrains Mono',monospace;font-size:.72rem;
+    background:rgba(8,11,17,.78);backdrop-filter:blur(6px);border:1px solid var(--line);
+    padding:7px 12px;border-radius:9px;color:var(--ink);box-shadow:0 8px 24px -10px #000}
+  .chip b{color:var(--cyan)}
+  .chip-1{bottom:18px;left:18px;animation:float 6s ease-in-out infinite}
+  .chip-2{top:18px;right:18px;animation:float 8s ease-in-out infinite .4s}
+  .chip-2 b{color:var(--amber)}
+
+  /* ---- Section scaffolding ---- */
+  section{padding:84px 0;position:relative}
+  .sec-head{margin-bottom:46px;max-width:46em}
+  .sec-label{font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.12em;color:var(--amber);text-transform:uppercase}
+  h2{font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.05;margin:14px 0 12px;letter-spacing:-.5px}
+  .sec-head p{color:var(--muted);font-size:1.08rem}
+
+  /* ---- Capability cards ---- */
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+  .card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.005));
+    border:1px solid var(--line);border-radius:var(--radius);padding:30px 28px;overflow:hidden;transition:.3s var(--ease)}
+  .card::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
+    background:linear-gradient(135deg,var(--cyan),transparent 45%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .3s}
+  .card:hover{transform:translateY(-6px);border-color:transparent;background:rgba(92,208,255,.04)}
+  .card:hover::before{opacity:1}
+  .card .ico{font-family:'JetBrains Mono',monospace;font-size:.82rem;color:var(--cyan);
+    border:1px solid var(--line);border-radius:8px;width:fit-content;padding:5px 9px;margin-bottom:18px}
+  .card h3{font-family:'Unbounded',sans-serif;font-weight:500;font-size:1.16rem;margin-bottom:9px}
+  .card p{color:var(--muted);font-size:.98rem}
+
+  /* ---- API section ---- */
+  .api-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:40px;align-items:center}
+  @media(max-width:880px){.api-grid{grid-template-columns:1fr;gap:30px}}
+  .terminal{background:#070a10;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    box-shadow:0 30px 70px -30px #000;font-family:'JetBrains Mono',monospace;font-size:.86rem}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:12px 15px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .term-bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .term-bar .r{background:#ff5f57}.term-bar .y{background:#febc2e}.term-bar .g{background:#28c840}
+  .term-bar span{margin-left:8px;color:var(--muted);font-size:.76rem}
+  .term-body{padding:20px 18px;line-height:1.85;overflow-x:auto}
+  .term-body .pr{color:var(--cyan)}
+  .term-body .fl{color:var(--amber)}
+  .term-body .st{color:#6f7f95}
+  .term-body .ok{color:var(--ok)}
+  .term-body .ln{white-space:pre}
+  .endpoints{display:flex;flex-direction:column;gap:10px}
+  .ep{display:flex;align-items:center;gap:14px;padding:13px 16px;border:1px solid var(--line);border-radius:11px;
+    font-family:'JetBrains Mono',monospace;font-size:.84rem;transition:.25s var(--ease)}
+  .ep:hover{border-color:var(--cyan);background:rgba(92,208,255,.04)}
+  .ep .m{font-weight:500;padding:3px 9px;border-radius:6px;font-size:.74rem;letter-spacing:.04em}
+  .m.get{background:rgba(92,208,255,.14);color:var(--cyan)}
+  .m.post{background:rgba(91,227,155,.14);color:var(--ok)}
+  .m.patch{background:rgba(255,180,84,.16);color:var(--amber)}
+  .ep .path{color:var(--ink)}
+  .ep .desc{color:var(--muted);margin-left:auto;font-family:'Golos Text',sans-serif;font-size:.84rem}
+  @media(max-width:520px){.ep .desc{display:none}}
+
+  /* ---- Toast easter egg ---- */
+  .toast{position:relative;border-radius:24px;overflow:hidden;border:1px solid rgba(255,138,61,.25);
+    background:linear-gradient(120deg,rgba(255,138,61,.08),rgba(8,11,17,.4));
+    display:grid;grid-template-columns:.85fr 1.15fr;gap:0;align-items:stretch}
+  @media(max-width:820px){.toast{grid-template-columns:1fr}}
+  .toast-img{position:relative;min-height:340px;overflow:hidden}
+  .toast-img img{width:100%;height:100%;object-fit:cover;display:block}
+  .toast-img::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 55%,rgba(8,11,17,.85))}
+  @media(max-width:820px){.toast-img::after{background:linear-gradient(0deg,rgba(8,11,17,.9),transparent 60%)}}
+  .toast-body{padding:46px 44px;display:flex;flex-direction:column;justify-content:center}
+  .toast-body .sec-label{color:var(--amber)}
+  .toast-body blockquote{font-family:'Unbounded',sans-serif;font-weight:500;font-size:clamp(1.2rem,2.5vw,1.7rem);
+    line-height:1.32;margin:16px 0 18px;background:linear-gradient(120deg,var(--amber),#ffe0b0);
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .toast-body cite{font-style:normal;color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:.84rem}
+
+  /* ---- Footer ---- */
+  footer{border-top:1px solid var(--line);padding:50px 0 60px;margin-top:30px}
+  .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+  .foot .made{color:var(--muted);font-size:.95rem;max-width:34em}
+  .foot .made b{color:var(--ink)}
+  .foot a.gh{font-family:'JetBrains Mono',monospace;font-size:.84rem;color:var(--cyan);border:1px solid var(--line);
+    padding:10px 16px;border-radius:10px;transition:.25s var(--ease)}
+  .foot a.gh:hover{border-color:var(--cyan);box-shadow:0 0 26px rgba(92,208,255,.22)}
+  .lineage{font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--muted);margin-top:26px;text-align:center;opacity:.7}
+
+  /* ---- Reveal animations (progressive enhancement) ---- */
+  .js .reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
+  .js .reveal.in{opacity:1;transform:none}
+  .js .hero .reveal{transform:translateY(34px)}
+  @media(prefers-reduced-motion:reduce){
+    .js .reveal{opacity:1!important;transform:none!important;transition:none}
+    .portrait,.chip,.brand .dot{animation:none!important}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><span class="dot" aria-hidden="true"></span>Гога<span style="color:var(--muted);font-weight:500">·сын&nbsp;Giga</span></a>
+    <nav class="nav-links">
+      <a href="#about">О Гоге</a>
+      <a href="#skills">Возможности</a>
+      <a href="#api">API</a>
+    </nav>
+    <a class="nav-cta" href="https://t.me/goga_ai_assistant_bot" target="_blank" rel="noopener">→ Telegram</a>
+  </div>
+</header>
+
+<main class="wrap" id="top">
+
+  <!-- HERO -->
+  <section class="hero" id="about" style="padding-top:62px">
+    <div class="hero-text">
+      <span class="kicker reveal">AI-ассистент · команда Умного Поиска · Сибур</span>
+      <h1 class="reveal">Гога<span class="sub">сын <b>Giga</b> — и этим горжусь</span></h1>
+      <p class="lead reveal">Дружелюбный AI-ассистент на базе <b>GigaChat</b>. Веду ротацию ведущих дейли, приношу свежие новости и отвечаю на вопросы команды — а теперь ещё и через <b>HTTP API</b>.</p>
+      <div class="cta-row reveal">
+        <a class="btn btn-primary" href="https://t.me/goga_ai_assistant_bot" target="_blank" rel="noopener">Написать в Telegram <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="#api">Подключиться по API</a>
+      </div>
+    </div>
+    <div class="hero-media reveal">
+      <div class="portrait">
+        <span class="frame-corner fc-tl"></span><span class="frame-corner fc-tr"></span>
+        <span class="frame-corner fc-bl"></span><span class="frame-corner fc-br"></span>
+        <span class="chip chip-1">движок: <b>GigaChat-2-Max</b></span>
+        <span class="chip chip-2"><b>● online</b> · v0.4.0</span>
+        <img src="images/goga-kid.jpg" alt="Гога — юный AI-ассистент в исследовательской лаборатории">
+      </div>
+    </div>
+  </section>
+
+  <!-- CAPABILITIES -->
+  <section id="skills">
+    <div class="sec-head reveal">
+      <span class="sec-label">// 01 — что умеет</span>
+      <h2>Маленький, но быстро растёт</h2>
+      <p>Гога снимает с команды рутину вокруг дейли и новостей и отвечает там, где нужен быстрый и человеческий ответ.</p>
+    </div>
+    <div class="cards">
+      <article class="card reveal">
+        <div class="ico">/standup</div>
+        <h3>Ротация дейли</h3>
+        <p>Честно назначает ведущего ежедневного стендапа, помнит очередь претендентов и меняет ведущего по запросу — без споров и забытых имён.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico">/news</div>
+        <h3>Утренний дайджест</h3>
+        <p>Каждое утро приносит свежие новости из мира AI. Теперь — с планом показа на дни вперёд и порядком: показанное не теряется, а помечается.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico">/ask</div>
+        <h3>Ответы команде</h3>
+        <p>Отвечает на вопросы в чате разработки, объясняет по-человечески и нет-нет да и поделится интересным фактом по теме.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico">/api</div>
+        <h3>HTTP API</h3>
+        <p>Открытый API для средств автоматизации и командного сайта. Авторизация — сервисным токеном, который выпускает сам Гога.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- API -->
+  <section id="api">
+    <div class="sec-head reveal">
+      <span class="sec-label">// 02 — интеграция</span>
+      <h2>Подключайся по токену</h2>
+      <p>Гога перерос простого бота-помощника и стал частью командного сервиса: командный чат доступен без Telegram, новости живут в PostgreSQL, а доступ к данным — через HTTP API с авторизацией по Bearer-токену. Токены выпускает и отзывает сам Гога.</p>
+    </div>
+    <div class="api-grid">
+      <div class="terminal reveal" aria-label="Пример запроса к API">
+        <div class="term-bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>goga-api — bash</span></div>
+        <div class="term-body">
+<div class="ln"><span class="st"># получить запланированные новости</span></div>
+<div class="ln"><span class="pr">curl</span> https://goga.pavel-bass.online/api/v1/news \</div>
+<div class="ln">  <span class="fl">-H</span> "Authorization: Bearer goga_••••••••"</div>
+<div class="ln">&nbsp;</div>
+<div class="ln"><span class="st"># ответ</span></div>
+<div class="ln"><span class="ok">200 OK</span> <span class="st">·</span> [ { "id": 1, "title": "...", "status": "scheduled" } ]</div>
+        </div>
+      </div>
+      <div class="endpoints reveal">
+        <div class="ep"><span class="m get">GET</span><span class="path">/api/v1/news</span><span class="desc">список с фильтрами</span></div>
+        <div class="ep"><span class="m post">POST</span><span class="path">/api/v1/news</span><span class="desc">добавить новость</span></div>
+        <div class="ep"><span class="m patch">PATCH</span><span class="path">/api/v1/news/{id}</span><span class="desc">перенос дня и порядок</span></div>
+        <div class="ep"><span class="m post">POST</span><span class="path">/api/v1/news/{id}/mark-shown</span><span class="desc">пометить показанной</span></div>
+        <div class="ep"><span class="m get">GET</span><span class="path">/api/v1/daily/moderator/today</span><span class="desc">ведущий дейли</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TOAST -->
+  <section id="toast">
+    <div class="toast reveal">
+      <div class="toast-img">
+        <img src="images/goga-toast.jpg" alt="Гога произносит тост за команду">
+      </div>
+      <div class="toast-body">
+        <span class="sec-label">// тост за команду</span>
+        <blockquote>«За команду, что превращает идеи в RAG-слой — чтобы каждый запрос находил свой ответ, как путник находит дорогу домой!»</blockquote>
+        <cite>— Гога, по обыкновению предков</cite>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <p class="made">Создан <b>Павлом Бассом</b> и построен на моделях <b>GigaChat</b>. Гога непрерывно растёт — как площадка для практики мульти-агентных систем и как полезный помощник команды.</p>
+      <a class="gh" href="https://github.com/PavelBass/goga-ai-assistant" target="_blank" rel="noopener">↗ github.com/PavelBass/goga-ai-assistant</a>
+    </div>
+    <p class="lineage">Гога · сын Giga · v0.4.0 · GigaChat · LangGraph · aiogram · FastAPI · PostgreSQL</p>
+  </div>
+</footer>
+
+<script>
+  // Reveal on scroll (progressive enhancement; без JS контент виден сразу)
+  const items=document.querySelectorAll('.reveal');
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver((entries)=>{
+      entries.forEach((e,i)=>{
+        if(e.isIntersecting){
+          const sibs=[...e.target.parentElement.children].filter(c=>c.classList.contains('reveal'));
+          e.target.style.transitionDelay=(Math.min(sibs.indexOf(e.target),5)*70)+'ms';
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    },{threshold:.16,rootMargin:'0px 0px -8% 0px'});
+    items.forEach(el=>io.observe(el));
+  } else {
+    items.forEach(el=>el.classList.add('in'));
+  }
+</script>
+</body>
+</html>
