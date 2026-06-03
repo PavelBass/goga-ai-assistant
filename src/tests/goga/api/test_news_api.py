@@ -50,10 +50,10 @@ def _client() -> httpx.AsyncClient:
 
 
 async def test_health_without_token():
-    """/health доступен без авторизации"""
+    """/api/v1/health доступен без авторизации"""
     await _prepare_db_and_token()
     async with _client() as client:
-        response = await client.get('/health')
+        response = await client.get('/api/v1/health')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
 

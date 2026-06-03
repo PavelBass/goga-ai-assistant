@@ -33,6 +33,30 @@ def _build_daily_trigger() -> CronTrigger:
     )
 
 
+def _register_history_middlewares() -> None:
+    """Подключает сохранение истории чата, если оно не отключено в конфиге
+
+    Входящие/правки ловятся outer-middleware на dp.message/dp.edited_message,
+    исходящие — request-middleware на bot.session.
+
+    По умолчанию включено: config.toml у каждого окружения свой (в .gitignore),
+    поэтому не полагаемся на наличие секции. Отключить — chat_history.enabled = false.
+    """
+    if not config.CONFIG.get('chat_history', {}).get('enabled', True):
+        logger.info('Сохранение истории чата отключено')
+        return
+    from goga.ui.telegram.aiogram.middlewares.history import (
+        HistoryCaptureMiddleware,
+        HistoryRequestMiddleware,
+    )
+
+    capture = HistoryCaptureMiddleware()
+    dp.message.outer_middleware(capture)
+    dp.edited_message.outer_middleware(capture)
+    bot.session.middleware(HistoryRequestMiddleware())
+    logger.info('Сохранение истории чата включено')
+
+
 def _build_api_server() -> uvicorn.Server:
     """Строит сервер uvicorn для встраивания в общий event loop
 
@@ -61,6 +85,7 @@ async def run_telegram_bot():
     останавливает второй.
     """
     build_bot_messages()
+    _register_history_middlewares()
     scheduler = AsyncIOScheduler()
     scheduler.add_job(func=say_about_daily_standup_leader, args=[bot], trigger=_build_daily_trigger())
     scheduler.start()

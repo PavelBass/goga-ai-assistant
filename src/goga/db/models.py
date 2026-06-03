@@ -4,21 +4,39 @@ import datetime as dt
 import enum
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     Date,
     DateTime,
     Enum,
+    ForeignKey,
     Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
     Mapped,
     mapped_column,
+    relationship,
 )
 
 from goga.db.engine import Base
+
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Возвращает значения членов перечисления для хранения в БД (lowercase)
+
+    Args:
+        enum_cls: класс перечисления
+
+    Raises:
+        AttributeError: если у членов нет атрибута value
+    """
+    return [member.value for member in enum_cls]
 
 
 class NewsStatus(enum.Enum):
@@ -120,3 +138,194 @@ class ApiToken(Base):
     def __repr__(self) -> str:
         """Однозначное строковое представление"""
         return f'ApiToken(id={self.id}, name={self.name!r}, active={self.is_active})'
+
+
+class MessageDirection(enum.Enum):
+    """Направление сообщения относительно бота
+
+    Attributes:
+        Incoming: сообщение пришло в чат (от пользователя или другого бота)
+        Outgoing: сообщение отправил сам Гога
+    """
+
+    Incoming = 'incoming'
+    Outgoing = 'outgoing'
+
+
+class MediaType(enum.Enum):
+    """Тип медиавложения сообщения
+
+    Attributes:
+        Photo: фотография
+        Video: видео
+        Animation: анимация (GIF/беззвучное видео)
+        Document: документ/файл
+        Audio: аудиофайл (музыка)
+        Voice: голосовое сообщение
+        VideoNote: видеосообщение (кружок)
+        Sticker: стикер
+    """
+
+    Photo = 'photo'
+    Video = 'video'
+    Animation = 'animation'
+    Document = 'document'
+    Audio = 'audio'
+    Voice = 'voice'
+    VideoNote = 'video_note'
+    Sticker = 'sticker'
+
+
+class Chat(Base):
+    """Телеграм-чат, история которого сохраняется
+
+    Хранит последнее известное состояние чата: апсертится при каждом
+    сохранённом сообщении. Используется API для списка чатов и заголовков.
+
+    Attributes:
+        id: telegram chat id (первичный ключ, задаётся Telegram, не автоинкремент)
+        type: тип чата (private/group/supergroup/channel)
+        title: название чата (для групп/каналов)
+        username: публичный username чата (без @), если есть
+        updated_at: момент последнего обновления записи
+    """
+
+    __tablename__ = 'chats'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        """Однозначное строковое представление"""
+        return f'Chat(id={self.id}, type={self.type!r}, title={self.title!r})'
+
+
+class Message(Base):
+    """Сообщение чата для истории
+
+    Записи идемпотентны по паре (chat_id, tg_message_id): повторная вставка
+    того же сообщения игнорируется, правка обновляет text/edit_date/entities.
+    Порядок и keyset-пагинация строятся по tg_message_id — он монотонно растёт
+    в пределах чата. Полный снимок сообщения хранится в raw (страховка верности
+    отображения), если включено в конфиге.
+
+    Attributes:
+        id: внутренний автоинкрементный первичный ключ
+        chat_id: telegram id чата
+        tg_message_id: telegram message_id (уникален в пределах чата)
+        sender_user_id: telegram id отправителя (None у сервисных/канальных)
+        sender_username: username отправителя на момент отправки (снимок)
+        sender_name: отображаемое имя отправителя на момент отправки (снимок)
+        direction: направление (входящее/исходящее, см. MessageDirection)
+        date: момент отправки сообщения
+        edit_date: момент последней правки (None, если не редактировалось)
+        text: текст сообщения или подпись к медиа (caption)
+        entities: форматирование (entities/caption_entities) как список dump'ов
+        reply_to_tg_message_id: tg_message_id сообщения, на которое дан ответ
+        forward_origin: источник пересланного сообщения (MessageOrigin dump)
+        forward_sender_name: отображаемое имя источника пересылки
+        media_group_id: идентификатор альбома (для сгруппированных медиа)
+        content_type: тип содержимого (значение aiogram ContentType)
+        raw: полный JSON-дамп сообщения (страховка верности отображения)
+        created_at: момент сохранения записи
+        media: связанное медиавложение (0..1)
+    """
+
+    __tablename__ = 'messages'
+    __table_args__ = (
+        UniqueConstraint('chat_id', 'tg_message_id', name='uq_messages_chat_tg_id'),
+        Index('ix_messages_media_group', 'media_group_id'),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tg_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sender_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sender_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sender_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    direction: Mapped[MessageDirection] = mapped_column(
+        Enum(MessageDirection, name='message_direction', values_callable=_enum_values),
+        nullable=False,
+    )
+    date: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    edit_date: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entities: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    reply_to_tg_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    forward_origin: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    forward_sender_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_group_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    media: Mapped['MessageMedia | None'] = relationship(
+        back_populates='message',
+        uselist=False,
+        cascade='all, delete-orphan',
+        lazy='selectin',
+    )
+
+    def __repr__(self) -> str:
+        """Однозначное строковое представление"""
+        return f'Message(chat_id={self.chat_id}, tg_message_id={self.tg_message_id}, direction={self.direction.value})'
+
+
+class MessageMedia(Base):
+    """Медиавложение сообщения (0..1 на сообщение)
+
+    Байты файла хранятся на диске (storage_path); в БД — только метаданные.
+    Если файл крупнее лимита Bot API (20 МБ) или скачать не удалось,
+    downloaded=False, а причина — в download_error; запись при этом сохраняется
+    (file_id/file_unique_id и метаданные остаются).
+
+    Attributes:
+        id: внутренний автоинкрементный первичный ключ
+        message_id: ссылка на сообщение (уникальна, 1:1)
+        media_type: тип вложения (см. MediaType)
+        file_id: telegram file_id (привязан к боту, может меняться)
+        file_unique_id: стабильный идентификатор файла (для адресации в API)
+        file_name: исходное имя файла (для документов)
+        mime_type: MIME-тип содержимого
+        file_size: размер файла в байтах (если известен)
+        width: ширина (фото/видео)
+        height: высота (фото/видео)
+        duration: длительность в секундах (аудио/видео/голос)
+        storage_path: относительный путь к скачанному файлу на диске
+        downloaded: скачаны ли байты файла
+        download_error: причина, по которой байты не скачаны (None при успехе)
+        message: связанное сообщение
+    """
+
+    __tablename__ = 'message_media'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('messages.id', ondelete='CASCADE'), nullable=False, unique=True
+    )
+    media_type: Mapped[MediaType] = mapped_column(
+        Enum(MediaType, name='media_type', values_callable=_enum_values),
+        nullable=False,
+    )
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    file_unique_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    file_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    downloaded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    download_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    message: Mapped['Message'] = relationship(back_populates='media')
+
+    def __repr__(self) -> str:
+        """Однозначное строковое представление"""
+        return f'MessageMedia(message_id={self.message_id}, type={self.media_type.value}, downloaded={self.downloaded})'
