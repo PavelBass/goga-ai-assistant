@@ -20,13 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from goga.api.schemas import (
     ChatOut,
-    MessageOut,
     MessagesPage,
 )
 from goga.api.security import require_token
+from goga.api.serializers import message_to_out
 from goga.data.chat_history import ChatHistoryRepository
 from goga.db.engine import get_session
-from goga.db.models import Message
 from goga.utils import get_data_directory
 
 router = APIRouter(
@@ -36,21 +35,6 @@ router = APIRouter(
 )
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
-
-
-def _to_message_out(message: Message) -> MessageOut:
-    """Преобразует ORM-сообщение в схему ответа, проставляя ссылку на медиа
-
-    Args:
-        message: ORM-объект сообщения (со связанным media)
-    """
-    out = MessageOut.model_validate(message)
-    if out.media is not None:
-        if out.media.downloaded:
-            out.media.url = f'/api/v1/chats/{message.chat_id}/media/{out.media.file_unique_id}'
-        else:
-            out.media.url = None
-    return out
 
 
 @router.get('', response_model=list[ChatOut])
@@ -86,7 +70,7 @@ async def list_messages(
     newest_id = messages[-1].tg_message_id if messages else None
     has_more = await repository.has_before(chat_id, oldest_id) if oldest_id is not None else False
     return MessagesPage(
-        messages=[_to_message_out(message) for message in messages],
+        messages=[message_to_out(message) for message in messages],
         has_more=has_more,
         oldest_id=oldest_id,
         newest_id=newest_id,

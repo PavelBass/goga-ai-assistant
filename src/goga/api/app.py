@@ -13,6 +13,7 @@ from goga.api.routers import (
     daily,
     history,
     news,
+    stream,
 )
 
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(news.router)
     app.include_router(daily.router)
     app.include_router(history.router)
+    app.include_router(stream.router)
     return app
 
 

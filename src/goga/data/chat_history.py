@@ -262,6 +262,24 @@ class ChatHistoryRepository:
             update(MessageMedia).where(MessageMedia.id == media_id).values(downloaded=False, download_error=error)
         )
 
+    async def get_message(self, chat_id: int, tg_message_id: int) -> Message | None:
+        """Возвращает сообщение по паре (chat_id, tg_message_id) вместе с media
+
+        Используется живой лентой для сериализации только что сохранённого
+        сообщения. Связанное media подгружается через selectin (см. модель).
+
+        Args:
+            chat_id: telegram id чата
+            tg_message_id: telegram message_id
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: при ошибке чтения из БД
+        """
+        result = await self._session.execute(
+            select(Message).where(Message.chat_id == chat_id, Message.tg_message_id == tg_message_id)
+        )
+        return result.scalar_one_or_none()
+
     async def list_chats(self) -> Sequence[Chat]:
         """Возвращает все известные чаты
 

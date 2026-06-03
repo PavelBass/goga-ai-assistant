@@ -26,6 +26,7 @@ from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.types import Message
 
 from goga import config
+from goga.api.realtime import publish_message
 from goga.data.chat_history import ChatHistoryRepository
 from goga.db.engine import session_scope
 from goga.db.models import (
@@ -273,15 +274,20 @@ def _guess_extension(media: dict) -> str:
     return _DEFAULT_EXTENSIONS.get(media['media_type'], '')
 
 
-async def _download_media(media_id: int, chat_id: int, file_id: str, file_unique_id: str, extension: str) -> None:
+async def _download_media(
+    media_id: int, chat_id: int, tg_message_id: int, file_id: str, file_unique_id: str, extension: str
+) -> None:
     """Фоновая задача: скачивает медиа на диск и обновляет запись
 
     Ошибки (в т.ч. файл больше лимита Bot API) перехватываются и фиксируются в
-    download_error — отправка/обработка сообщений при этом не страдает.
+    download_error — отправка/обработка сообщений при этом не страдает. После
+    успешного скачивания сообщение перерассылается в живую ленту как
+    ``message.edited`` — у медиа появляется url, и страница обновляет вложение.
 
     Args:
         media_id: id записи медиа
         chat_id: telegram id чата (для каталога)
+        tg_message_id: telegram message_id сообщения (для оповещения живой ленты)
         file_id: telegram file_id для скачивания
         file_unique_id: стабильный идентификатор файла (имя файла на диске)
         extension: расширение файла
@@ -297,6 +303,7 @@ async def _download_media(media_id: int, chat_id: int, file_id: str, file_unique
         async with session_scope() as session:
             await ChatHistoryRepository(session).mark_media_downloaded(media_id, storage_path=str(relative_path))
         logger.info('Медиа сохранено: %s', relative_path)
+        await publish_message(chat_id, tg_message_id, 'message.edited')
     # Любая ошибка скачивания (в т.ч. файл больше лимита) не должна ломать бота
     except Exception as error:
         logger.warning('Не удалось скачать медиа %s: %s', file_unique_id, error)
@@ -307,11 +314,68 @@ async def _download_media(media_id: int, chat_id: int, file_id: str, file_unique
             logger.exception('Не удалось зафиксировать ошибку скачивания медиа')
 
 
+async def _store(
+    *,
+    message: Message,
+    direction: MessageDirection,
+    fields: dict,
+    media: dict | None,
+    too_large: bool,
+) -> tuple[str | None, int | None]:
+    """Сохраняет сообщение/правку в БД и сообщает, что произошло
+
+    Медиа добавляется только при первичной вставке.
+
+    Args:
+        message: сообщение aiogram (источник данных чата)
+        direction: направление (входящее/исходящее)
+        fields: поля сообщения (из extract_message_fields)
+        media: метаданные медиа (из extract_media) или None
+        too_large: превышает ли медиа лимит скачивания Bot API
+
+    Returns:
+        кортеж (тип события для живой ленты, id записи медиа). Тип события:
+        ``message.new`` при вставке, ``message.edited`` при применённой правке,
+        None если сообщение-дубликат без изменений. Id медиа — только при вставке
+        нового медиа, иначе None.
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: при ошибке записи в БД
+    """
+    async with session_scope() as session:
+        repository = ChatHistoryRepository(session)
+        chat = message.chat
+        await repository.upsert_chat(chat_id=chat.id, chat_type=chat.type, title=chat.title, username=chat.username)
+        inserted_id = await repository.save_message(direction=direction, **fields)
+        if inserted_id is None:
+            if fields['edit_date'] is None:
+                return None, None
+            updated = await repository.apply_edit(
+                chat_id=fields['chat_id'],
+                tg_message_id=fields['tg_message_id'],
+                edit_date=fields['edit_date'],
+                text=fields['text'],
+                entities=fields['entities'],
+                raw=fields['raw'],
+            )
+            return ('message.edited' if updated else None), None
+        media_id = None
+        if media is not None:
+            media_id = await repository.add_media(
+                message_id=inserted_id,
+                downloaded=False,
+                download_error='too_large' if too_large else None,
+                **media,
+            )
+        return 'message.new', media_id
+
+
 async def persist_message(message: Message, direction: MessageDirection) -> None:
-    """Сохраняет сообщение в историю и планирует скачивание медиа
+    """Сохраняет сообщение в историю, планирует скачивание медиа и шлёт в ленту
 
     Новое сообщение вставляется; для уже сохранённого с проставленным edit_date
-    применяется правка. Медиа добавляется только при первичной вставке.
+    применяется правка. Сохранённое/изменённое сообщение рассылается подписчикам
+    живой ленты чата (publish_message сам ничего не делает, если чат не слушают).
 
     Args:
         message: сообщение aiogram
@@ -324,41 +388,24 @@ async def persist_message(message: Message, direction: MessageDirection) -> None
     media = extract_media(message)
     too_large = bool(media and media.get('file_size') and media['file_size'] > _max_download_bytes())
 
-    media_id: int | None = None
-    async with session_scope() as session:
-        repository = ChatHistoryRepository(session)
-        chat = message.chat
-        await repository.upsert_chat(chat_id=chat.id, chat_type=chat.type, title=chat.title, username=chat.username)
-        inserted_id = await repository.save_message(direction=direction, **fields)
-        if inserted_id is None:
-            if fields['edit_date'] is not None:
-                await repository.apply_edit(
-                    chat_id=fields['chat_id'],
-                    tg_message_id=fields['tg_message_id'],
-                    edit_date=fields['edit_date'],
-                    text=fields['text'],
-                    entities=fields['entities'],
-                    raw=fields['raw'],
-                )
-            return
-        if media is not None:
-            media_id = await repository.add_media(
-                message_id=inserted_id,
-                downloaded=False,
-                download_error='too_large' if too_large else None,
-                **media,
-            )
+    event_type, media_id = await _store(
+        message=message, direction=direction, fields=fields, media=media, too_large=too_large
+    )
 
     if media_id is not None and media is not None and not too_large:
         _schedule(
             _download_media(
                 media_id,
                 message.chat.id,
+                fields['tg_message_id'],
                 media['file_id'],
                 media['file_unique_id'],
                 _guess_extension(media),
             )
         )
+
+    if event_type is not None:
+        await publish_message(fields['chat_id'], fields['tg_message_id'], event_type)
 
 
 class HistoryCaptureMiddleware(BaseMiddleware):
