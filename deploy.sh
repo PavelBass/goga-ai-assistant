@@ -1,14 +1,15 @@
 #!/usr/bin/bash
 #
 # Серверный деплой Гоги. Запускается НА сервере tw_fra — локально дёргается
-# через remote-deploy.sh (ssh tw_fra -o RemoteCommand=...).
+# через remote-deploy.sh (ssh tw_fra '… && ./deploy.sh').
 #
 # Делает:
 #   1. git pull свежего кода;
 #   2. pip install -e . — зависимости в pyenv-окружение goga;
 #   3. alembic upgrade head — миграции БД (Postgres локален на сервере, строка
-#      DATABASE_URL берётся из .env относительно каталога проекта);
-#   4. перезапуск Гоги (бот + HTTP API в одном процессе) под daemon --respawn.
+#      DATABASE_URL берётся из .env по расположению пакета через find_dotenv);
+#   4. перезапуск Гоги (бот + HTTP API в одном процессе) под daemon — метод
+#      запуска совпадает с проверенным ~/run_goga.sh (лог в $LOG, конфиг $CONFIG).
 #
 # Предполагает выполненный одноразовый bootstrap:
 #   - создано pyenv-окружение goga (pyenv virtualenv <py> goga);
@@ -24,6 +25,8 @@ PROJECT_DIR=/home/pbass/goga-ai-assistant
 ENV_BIN=/home/pbass/.pyenv/versions/goga/bin
 # Прод-конфиг лежит вне репозитория (config.toml в .gitignore) — абсолютный путь.
 CONFIG=/home/pbass/config.toml
+# Лог Гоги — как в ~/run_goga.sh (вывод бота/uvicorn пишется сюда через daemon -o).
+LOG=/home/pbass/goga.log
 # HTTP API биндится на этот порт (см. [api].port в config.toml) — ждём его
 # освобождения перед перезапуском, чтобы uvicorn не упал на занятом порту.
 PORT=8080
@@ -39,26 +42,22 @@ echo "[deploy] pip install -e ."
 echo "[deploy] alembic upgrade head"
 "$ENV_BIN/alembic" upgrade head
 
-echo "[deploy] restart goga (daemon)"
+echo "[deploy] stop goga"
 daemon --name=goga --stop 2>/dev/null || true
 sleep 1
-# Подстраховка от бага daemon на этом VDS (см. harmonia/deploy.sh): иногда
-# `daemon --list` теряет процесс, а супервизор daemon и/или сам Гога остаются в
-# `ps` и держат порт API — тогда `--stop` ничего не делает. Добиваем по шаблону.
-# Важно ещё и потому, что Telegram допускает лишь один поллинг getUpdates: два
-# процесса Гоги конфликтуют. pkill-шаблоны не совпадают с самим deploy.sh.
-pkill -f "daemon --name=goga" 2>/dev/null || true
-pkill -f "\.pyenv/versions/goga/bin/goga --configuration" 2>/dev/null || true
+# Подстраховка: если --stop не сработал (потерянный pidfile), добиваем сам Гогу
+# по шаблону. Важно ещё и потому, что Telegram допускает лишь один поллинг
+# getUpdates — два процесса Гоги конфликтуют. Шаблон не совпадает с deploy.sh.
+pkill -f "bin/goga --configuration" 2>/dev/null || true
+# Ждём освобождения порта API, чтобы uvicorn не упал на занятом порту.
 for _ in $(seq 1 20); do
   ss -ltn 2>/dev/null | grep -q "127.0.0.1:$PORT\b" || break
   sleep 0.5
 done
-# --chdir в каталог проекта: config передаём абсолютным путём, .env goga находит
-# через find_dotenv (по расположению пакета), но cwd=/ у daemon лучше не оставлять.
-# --respawn перезапускает Гогу при падении. Пакет goga ставится editable
-# (pip install -e .), поэтому запускаем по entrypoint goga.
-daemon --name=goga --respawn --chdir="$PROJECT_DIR" \
-  -o "$PROJECT_DIR/goga.log" -- \
-  "$ENV_BIN/goga" --configuration "$CONFIG"
+echo "[deploy] start goga (метод как в ~/run_goga.sh)"
+# Метод запуска взят из проверенного ~/run_goga.sh: daemon с логом в $LOG и
+# абсолютным путём к конфигу. .env goga находит через find_dotenv (по
+# расположению пакета), config.toml вне репозитория — отсюда абсолютный $CONFIG.
+/usr/bin/daemon --name=goga -o "$LOG" -- "$ENV_BIN/goga" --configuration "$CONFIG"
 
-echo "[deploy] done — Гога перезапущен (бот + HTTP API на 127.0.0.1:$PORT)"
+echo "[deploy] done — Гога перезапущен (бот + HTTP API на 127.0.0.1:$PORT), лог: $LOG"

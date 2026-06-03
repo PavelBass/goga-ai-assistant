@@ -4,10 +4,14 @@
 #
 # Делает:
 #   1. коммитит изменения, если они есть, и пушит в origin;
-#   2. дёргает серверный deploy.sh через ssh RemoteCommand.
+#   2. на сервере подтягивает код и запускает deploy.sh.
 #
-# Если предпочитаешь коммитить вручную — закоммить/запушь сам и запусти только
-# последний шаг: ssh tw_fra -o RemoteCommand='goga-ai-assistant/deploy.sh'
+# Запускаем deploy.sh прямой ssh-командой (не через -o RemoteCommand): при
+# RemoteCommand daemon не переживал закрытие сессии и Гога не поднимался.
+# git pull делаем ДО запуска, чтобы исполнялась свежая версия самого deploy.sh.
+#
+# Если предпочитаешь коммитить вручную — закоммить/запушь сам и запусти только:
+#   ssh tw_fra 'cd goga-ai-assistant && git pull --ff-only && ./deploy.sh'
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -22,4 +26,4 @@ echo "[remote-deploy] push"
 git push
 
 echo "[remote-deploy] run deploy.sh on tw_fra"
-ssh tw_fra -o RemoteCommand='goga-ai-assistant/deploy.sh'
+ssh tw_fra 'cd goga-ai-assistant && git pull --ff-only && ./deploy.sh'
