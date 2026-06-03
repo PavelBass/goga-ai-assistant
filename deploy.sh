@@ -12,15 +12,18 @@
 #
 # Предполагает выполненный одноразовый bootstrap:
 #   - создано pyenv-окружение goga (pyenv virtualenv <py> goga);
-#   - присутствует прод-файл .env (TELEGRAM_BOT_TOKEN, GIGACHAT_CREDENTIALS,
-#     DATABASE_URL на локальный Postgres сервера);
-#   - config.toml с mode='production' (он в git);
+#   - в каталоге проекта присутствует прод-файл .env (TELEGRAM_BOT_TOKEN,
+#     GIGACHAT_CREDENTIALS, DATABASE_URL на локальный Postgres сервера);
+#     goga находит его через find_dotenv (по расположению пакета, не по cwd);
+#   - прод-config.toml лежит по пути $CONFIG (вне git, mode='production');
 #   - поднят Postgres, БД из DATABASE_URL создана;
 #   - у бота отключён Privacy Mode в BotFather (нужно для полной истории чата).
 set -euo pipefail
 
 PROJECT_DIR=/home/pbass/goga-ai-assistant
 ENV_BIN=/home/pbass/.pyenv/versions/goga/bin
+# Прод-конфиг лежит вне репозитория (config.toml в .gitignore) — абсолютный путь.
+CONFIG=/home/pbass/config.toml
 # HTTP API биндится на этот порт (см. [api].port в config.toml) — ждём его
 # освобождения перед перезапуском, чтобы uvicorn не упал на занятом порту.
 PORT=8080
@@ -50,12 +53,12 @@ for _ in $(seq 1 20); do
   ss -ltn 2>/dev/null | grep -q "127.0.0.1:$PORT\b" || break
   sleep 0.5
 done
-# --chdir обязателен: и config.toml, и .env читаются относительно cwd (goga ищет
-# .env через find_dotenv от текущего каталога; иначе daemon уходит в cwd=/ и
-# прод-настройки не подхватятся). --respawn перезапускает Гогу при падении.
-# Пакет goga ставится editable (pip install -e .), поэтому запускаем по entrypoint.
+# --chdir в каталог проекта: config передаём абсолютным путём, .env goga находит
+# через find_dotenv (по расположению пакета), но cwd=/ у daemon лучше не оставлять.
+# --respawn перезапускает Гогу при падении. Пакет goga ставится editable
+# (pip install -e .), поэтому запускаем по entrypoint goga.
 daemon --name=goga --respawn --chdir="$PROJECT_DIR" \
   -o "$PROJECT_DIR/goga.log" -- \
-  "$ENV_BIN/goga" --configuration config.toml
+  "$ENV_BIN/goga" --configuration "$CONFIG"
 
 echo "[deploy] done — Гога перезапущен (бот + HTTP API на 127.0.0.1:$PORT)"

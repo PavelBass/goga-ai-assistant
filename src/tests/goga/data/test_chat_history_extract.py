@@ -1,6 +1,7 @@
 """Юнит-тесты извлечения полей сообщения для истории чата (без БД и сети)"""
 
 import datetime as dt
+import json
 
 from aiogram.types import (
     Chat,
@@ -9,9 +10,14 @@ from aiogram.types import (
     PhotoSize,
     User,
 )
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+)
 
 from goga.db.models import MediaType
 from goga.ui.telegram.aiogram.middlewares.history import (
+    _json_safe,
     extract_media,
     extract_message_fields,
 )
@@ -85,3 +91,30 @@ def test_extract_media_photo():
 def test_extract_media_none_for_text():
     """У текстового сообщения медиа нет"""
     assert extract_media(_text_message()) is None
+
+
+class _Sentinel:
+    """Имитация aiogram.client.default.Default — несериализуемого в JSON"""
+
+    def __repr__(self) -> str:
+        """Строковое представление, к которому приводит _json_safe"""
+        return 'Default(parse_mode)'
+
+
+class _ModelWithSentinel(BaseModel):
+    """Модель с полями, на которых model_dump(mode='json') падает"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    when: dt.datetime
+    sentinel: _Sentinel
+
+
+def test_json_safe_coerces_unserializable_types():
+    """_json_safe приводит sentinel'ы aiogram и datetime к строке (не падает)"""
+    model = _ModelWithSentinel(when=dt.datetime(2026, 6, 3, 12, 0, tzinfo=dt.UTC), sentinel=_Sentinel())
+    data = _json_safe(model)
+    # результат полностью JSON-сериализуем
+    json.dumps(data)
+    assert data['sentinel'] == 'Default(parse_mode)'
+    assert isinstance(data['when'], str)

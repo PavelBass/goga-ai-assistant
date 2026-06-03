@@ -15,6 +15,7 @@
 """
 
 import asyncio
+import json
 import logging
 import mimetypes
 from collections.abc import Callable
@@ -119,6 +120,24 @@ def _content_type(message: Message) -> str:
     return getattr(value, 'value', str(value))
 
 
+def _json_safe(model: Any) -> Any:
+    """Сериализует модель aiogram в JSON-совместимый объект
+
+    Прямой ``model_dump(mode='json')`` падает на sentinel'ах aiogram
+    (``aiogram.client.default.Default`` в полях привязанной к боту модели) —
+    поэтому дампим в python-объекты и приводим неизвестные типы (Default,
+    datetime) к строке через ``json.dumps(default=str)``.
+
+    Args:
+        model: pydantic-модель aiogram (Message, MessageEntity, MessageOrigin)
+
+    Raises:
+        TypeError: при невозможности привести объект к JSON даже через str
+    """
+    raw = model.model_dump(mode='python', exclude_none=True)
+    return json.loads(json.dumps(raw, default=str, ensure_ascii=False))
+
+
 def _forward_sender_name(origin: Any) -> str | None:
     """Извлекает отображаемое имя источника пересланного сообщения
 
@@ -173,12 +192,12 @@ def extract_message_fields(message: Message, *, store_raw: bool) -> dict:
         'sender_username': message.from_user.username if message.from_user else None,
         'sender_name': _sender_name(message),
         'text': message.text or message.caption,
-        'entities': [entity.model_dump(mode='json', exclude_none=True) for entity in entities] if entities else None,
+        'entities': [_json_safe(entity) for entity in entities] if entities else None,
         'reply_to_tg_message_id': message.reply_to_message.message_id if message.reply_to_message else None,
-        'forward_origin': origin.model_dump(mode='json', exclude_none=True) if origin else None,
+        'forward_origin': _json_safe(origin) if origin else None,
         'forward_sender_name': _forward_sender_name(origin),
         'media_group_id': message.media_group_id,
-        'raw': message.model_dump(mode='json', exclude_none=True) if store_raw else None,
+        'raw': _json_safe(message) if store_raw else None,
     }
 
 
