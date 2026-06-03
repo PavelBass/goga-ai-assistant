@@ -1,4 +1,11 @@
-"""Команды управления новостями (для администраторов)"""
+"""Команды управления новостями (для администраторов)
+
+Новости хранятся в PostgreSQL. Показанные новости не удаляются, а помечаются
+статусом Shown (это делает ежедневная задача/инструмент get_news). Команда
+/news_delete выполняет физическое удаление и предназначена для ручной чистки.
+"""
+
+import datetime as dt
 import logging
 import re
 
@@ -8,23 +15,22 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 
 from goga import config
+from goga.data.news import NewsRepository
+from goga.db.engine import session_scope
+from goga.db.models import NewsStatus
 from goga.gigachat.agents import get_goga_answer
-from goga.gigachat.tools import get_or_create_news_repository
 from goga.ui.telegram.aiogram.bot import bot
 from goga.ui.telegram.aiogram.dispatcher import dp
 
 logger = logging.getLogger('Goga news')
 
 ADD_NEWS_PROMPT = (
-    'Тебе даны извлечённые данные статьи. Сформируй файл новости в формате markdown на русском языке. '
-    'Файл должен содержать: заголовок статьи (# Заголовок), краткий анонс статьи (2-3 предложения о сути не более 30-35 слов), '
-    'и ссылку на оригинал в формате [Читать оригинал](ссылка). '
-    'Также верни имя файла в формате ГГГГММДД Краткое название.md, '
-    'где ГГГГММДД — дата публикации оригинальной статьи (если дата неизвестна, используй сегодняшнюю). '
+    'Тебе даны извлечённые данные статьи. Сформируй короткую новость на русском языке. '
+    'Верни заголовок статьи и краткий анонс (2-3 предложения о сути, не более 30-35 слов). '
     'Ответ верни на русском языке строго в следующем формате без дополнительных комментариев:\n'
-    'FILENAME: имя файла\n'
-    'CONTENT:\n'
-    'содержимое файла'
+    'TITLE: заголовок\n'
+    'DESCRIPTION:\n'
+    'текст анонса'
 )
 
 
@@ -36,7 +42,15 @@ def _is_developer(message: types.Message) -> bool:
 
 
 def _extract_article(url: str) -> dict | None:
-    """Извлекает заголовок, текст и дату статьи по ссылке"""
+    """Извлекает заголовок, текст и дату статьи по ссылке
+
+    Args:
+        url: ссылка на статью
+
+    Returns:
+        словарь с ключами title, date, text, url или None, если не удалось
+        загрузить/извлечь содержимое
+    """
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
         return None
@@ -52,10 +66,19 @@ def _extract_article(url: str) -> dict | None:
     }
 
 
+def _parse_source_date(raw: str | None) -> dt.date | None:
+    """Парсит дату публикации (ISO ГГГГ-ММ-ДД) или возвращает None"""
+    if not raw:
+        return None
+    try:
+        return dt.date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
 @dp.message(Command('news_add'))
 async def add_news(message: types.Message):
     """Добавление новости: /news_add <ссылка на статью>"""
-    print('PEWPEPEWPEWPE', flush=True)
     if not _is_developer(message):
         return
     if not message.text:
@@ -78,14 +101,13 @@ async def add_news(message: types.Message):
     prompt += f'Заголовок: {article["title"]}\n'
     prompt += f'Дата публикации: {article["date"]}\n'
     prompt += f'Текст статьи:\n{article["text"][:3000]}'
-    print(prompt)
 
     answer = await get_goga_answer(message.chat.id, prompt)
 
-    filename_match = re.search(r'FILENAME:\s*(.+\.md)', answer)
-    content_match = re.search(r'CONTENT:\s*\n([\s\S]+)', answer)
+    title_match = re.search(r'TITLE:\s*(.+)', answer)
+    description_match = re.search(r'DESCRIPTION:\s*\n([\s\S]+)', answer)
 
-    if not filename_match or not content_match:
+    if not title_match or not description_match:
         await bot.send_message(
             message.chat.id,
             f'Не удалось распознать ответ. Ответ Гоги:\n\n{answer}',
@@ -93,66 +115,68 @@ async def add_news(message: types.Message):
         )
         return
 
-    filename = filename_match.group(1).strip()
-    content = content_match.group(1).strip()
+    title = title_match.group(1).strip()
+    description = description_match.group(1).strip()
 
-    news_repo = get_or_create_news_repository()
-    file_path = news_repo.add_news(filename, content)
+    async with session_scope() as session:
+        news = await NewsRepository(session).add(
+            title=title,
+            description=description,
+            url=url,
+            source_date=_parse_source_date(article['date']),
+            created_by=message.from_user.username if message.from_user else None,
+        )
+        news_id = news.id
 
     await bot.send_message(
         message.chat.id,
-        f'Новость добавлена: `{filename}`\n\n{content}',
+        f'Новость добавлена (id `{news_id}`):\n\n**{title}**\n{description}',
         parse_mode=ParseMode.MARKDOWN,
     )
-    logger.info(f'Новость добавлена: {file_path}')
+    logger.info(f'Новость добавлена: id={news_id} {title!r}')
 
 
 @dp.message(Command('news_list'))
 async def list_news(message: types.Message):
-    """Список новостей: /news_list"""
+    """Список непоказанных новостей: /news_list"""
     if not _is_developer(message):
         return
 
-    news_repo = get_or_create_news_repository()
-    items = news_repo.get_news_list()
+    async with session_scope() as session:
+        items = await NewsRepository(session).list(limit=100)
+        items = [news for news in items if news.status in (NewsStatus.Pending, NewsStatus.Scheduled)]
 
-    if not items:
-        await bot.send_message(message.chat.id, 'Нет непоказанных новостей.')
-        return
+        if not items:
+            await bot.send_message(message.chat.id, 'Нет непоказанных новостей.')
+            return
 
-    lines = []
-    current_day = 0
-    limit = config.CONFIG['news']['limit']
-    for index, filename, content in items:
-        day_number = (index - 1) // limit + 1
-        if day_number != current_day:
-            current_day = day_number
-            lines.append(f'\n*День показа {day_number}:*')
-        first_line = content.split('\n', maxsplit=1)[0].lstrip('# ').strip()
-        lines.append(f'  {index}. {first_line} (`{filename}`)')
+        lines = []
+        for news in items:
+            when = news.scheduled_for.isoformat() if news.scheduled_for else 'без даты'
+            lines.append(f'  `{news.id}`. {news.title} ({when})')
 
-    text = 'Список новостей:\n' + '\n'.join(lines)
+    text = 'Список непоказанных новостей:\n' + '\n'.join(lines)
     await bot.send_message(message.chat.id, text, parse_mode=ParseMode.MARKDOWN)
 
 
 @dp.message(Command('news_delete'))
 async def delete_news(message: types.Message):
-    """Удаление новости: /news_delete <номер>"""
+    """Удаление новости: /news_delete <id>"""
     if not _is_developer(message):
         return
     if not message.text:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].strip().isdigit():
-        await bot.send_message(message.chat.id, 'Использование: /news\\_delete <номер из /news\\_list>')
+        await bot.send_message(message.chat.id, 'Использование: /news\\_delete <id из /news\\_list>')
         return
 
-    index = int(parts[1].strip())
-    news_repo = get_or_create_news_repository()
-    deleted = news_repo.delete_news(index)
+    news_id = int(parts[1].strip())
+    async with session_scope() as session:
+        deleted = await NewsRepository(session).delete(news_id)
 
     if deleted:
-        await bot.send_message(message.chat.id, f'Новость удалена: `{deleted}`', parse_mode=ParseMode.MARKDOWN)
-        logger.info(f'Новость удалена: {deleted}')
+        await bot.send_message(message.chat.id, f'Новость удалена: id `{news_id}`', parse_mode=ParseMode.MARKDOWN)
+        logger.info(f'Новость удалена: id={news_id}')
     else:
-        await bot.send_message(message.chat.id, f'Новость с номером {index} не найдена.')
+        await bot.send_message(message.chat.id, f'Новость с id {news_id} не найдена.')

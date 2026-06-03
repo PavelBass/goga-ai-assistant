@@ -4,23 +4,29 @@
         { name = "Pavel Bass", email = "basspv@vk.com" },
     ]
     description = "Гога, сын Giga - AI-ассистент команды разработки RAG-слоя компании Сибур"
-    version = "0.3.0"
+    version = "0.4.0"
     dependencies = [
         "aiogram==3.22.0",
+        "alembic==1.16.4",
         "apscheduler==3.11.0",
+        "asyncpg==0.30.0",
+        "fastapi==0.118.3",
         "langchain==0.3.27",
         "langchain_gigachat==0.3.12",
         "langgraph==0.6.10",
         "python-dotenv==1.1.1",
         "rich==14.2.0",
+        "sqlalchemy[asyncio]==2.0.43",
         "telethon==1.41.2",
         "trafilatura==2.0.0",
+        "uvicorn[standard]==0.34.3",
     ]
     readme = "README.md"
     requires-python = ">= 3.13"
 
 [project.scripts]
     goga= "goga.cli:main"
+    goga-token = "goga.cli:token_main"
 
 [project.optional-dependencies]
     docs = [
