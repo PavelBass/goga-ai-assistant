@@ -16,6 +16,33 @@ from goga.api.routers import (
     stream,
 )
 
+# Описание для OpenAPI (info.description) — Swagger рендерит его как Markdown и
+# отдаёт в /api/v1/openapi.json. WebSocket-маршруты FastAPI в OpenAPI не включает,
+# поэтому про ws-ленту и её авторизацию иначе из спеки не узнать — описываем здесь
+# главное и ссылаемся на полный контракт.
+_API_DESCRIPTION = """\
+HTTP API Гоги для интеграции со средствами автоматизации и командным сайтом.
+
+## Авторизация
+
+Все эндпоинты, кроме `GET /api/v1/health`, требуют сервисный Bearer-токен
+(`Authorization: Bearer goga_…`), выпущенный Гогой.
+
+## Живая лента чата (WebSocket)
+
+Кроме REST есть WebSocket-лента новых сообщений чата:
+`WSS /api/v1/chats/{chat_id}/ws`.
+
+WebSocket-маршруты не попадают в OpenAPI (в списке путей ниже его нет), поэтому
+про авторизацию ленты — здесь. Токен **не** передаётся в URL: сразу после
+открытия сокета клиент первым кадром шлёт
+`{"type": "auth", "token": "goga_…", "after_id": <int?>}`. Серверный прокси может
+вместо `token` в кадре передать заголовок `Authorization: Bearer`. Auth-кадр
+ожидается не дольше 5 секунд; при его отсутствии, таймауте или неверном токене
+соединение закрывается кодом **4401**. Полный контракт — в файле
+`docs/chat-stream-ws.md` репозитория.
+"""
+
 
 def create_app() -> FastAPI:
     """Создаёт и настраивает экземпляр FastAPI"""
@@ -28,7 +55,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title='Goga API',
         version=app_version,
-        description='HTTP API Гоги для интеграции со средствами автоматизации и командным сайтом',
+        description=_API_DESCRIPTION,
         openapi_url='/api/v1/openapi.json',
         docs_url='/api/v1/docs',
         redoc_url='/api/v1/redoc',

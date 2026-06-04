@@ -3,13 +3,18 @@
 Отдаёт командному сайту новые сообщения чата в реальном времени. Формат
 сообщения в кадре совпадает с REST (``MessageOut``) — см. ``docs/chat-stream-ws.md``.
 
-Авторизация — тем же сервисным Bearer-токеном, что и REST, но токен берётся из
-query-параметра ``token`` (браузерный WebSocket не умеет ставить заголовки) либо
-из заголовка ``Authorization`` (серверный прокси). Маршрут вынесен в отдельный
+Авторизация — тем же сервисным Bearer-токеном, что и REST, но токен НЕ кладётся в
+URL: query-строка попадает в access-логи nginx/uvicorn и прочую телеметрию, то
+есть секрет утёк бы в открытом виде даже под wss. Поэтому клиент первым кадром
+шлёт ``{"type":"auth","token":...,"after_id":...}``; серверный прокси может вместо
+``token`` в кадре передать заголовок ``Authorization: Bearer`` (но кадр шлёт всё
+равно — в нём едет ``after_id``). Кадр ждём не дольше ``_AUTH_TIMEOUT_SECONDS``:
+таймаут/обрыв/мусор/неверный токен → закрытие ``4401``. Маршрут вынесен в отдельный
 роутер без роутерной Bearer-зависимости REST — у WebSocket своя проверка.
 """
 
 import asyncio
+import json
 import logging
 
 from fastapi import (
@@ -34,38 +39,69 @@ _PING_INTERVAL_SECONDS = 25.0
 _BACKFILL_LIMIT = 200
 # Код закрытия «не авторизован» (4000-4999 — прикладные коды WebSocket).
 _CLOSE_UNAUTHORIZED = 4401
+# Сколько ждём первый (auth) кадр клиента, прежде чем закрыть как неавторизованного.
+# Коротко: неавторизованный сокет уже принят и держит ресурсы (slowloris-поверхность).
+_AUTH_TIMEOUT_SECONDS = 5.0
 
 
-async def _extract_token(websocket: WebSocket, token: str | None) -> str | None:
-    """Достаёт сервисный токен из query-параметра или заголовка Authorization
+def _header_token(websocket: WebSocket) -> str | None:
+    """Достаёт сервисный токен из заголовка ``Authorization: Bearer`` (серверный прокси)
 
     Args:
         websocket: соединение (источник заголовков)
-        token: значение query-параметра ``token`` (или None)
     """
-    if token:
-        return token
     header = websocket.headers.get('authorization')
     if header and header.lower().startswith('bearer '):
         return header[len('bearer ') :].strip() or None
     return None
 
 
-async def _is_authorized(websocket: WebSocket, token: str | None) -> bool:
-    """Проверяет, что соединение предъявило действующий сервисный токен
+async def _read_auth_frame(websocket: WebSocket) -> dict | None:
+    """Читает первый (auth) кадр клиента с таймаутом ``_AUTH_TIMEOUT_SECONDS``
+
+    Любой не-успех (кадр не пришёл вовремя, соединение оборвалось, текст — не
+    JSON-объект, прислан бинарный кадр) преобразуется в None: вызывающий трактует
+    это как «не авторизован» (fail-closed), отдельные коды наружу не утекают.
 
     Args:
-        websocket: соединение (источник заголовков)
-        token: значение query-параметра ``token`` (или None)
+        websocket: соединение
+    """
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=_AUTH_TIMEOUT_SECONDS)
+    except (TimeoutError, WebSocketDisconnect, KeyError, RuntimeError):
+        return None
+    try:
+        frame = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return frame if isinstance(frame, dict) else None
+
+
+async def _authenticate(websocket: WebSocket) -> tuple[bool, int | None]:
+    """Авторизует соединение по первому кадру и/или заголовку, возвращает (ok, after_id)
+
+    Протокол: первым кадром клиент шлёт ``{"type":"auth","token":...,"after_id":...}``.
+    ``token`` обязателен, если не передан заголовок ``Authorization: Bearer`` (токен в
+    кадре имеет приоритет). ``after_id`` — необязательный int для добора дыры за REST;
+    нечисловое значение игнорируется. Любой не-успех → ``(False, None)``.
+
+    Args:
+        websocket: соединение (источник кадра и заголовков)
 
     Raises:
         sqlalchemy.exc.SQLAlchemyError: при ошибке проверки токена в БД
     """
-    candidate = await _extract_token(websocket, token)
-    if not candidate:
-        return False
+    frame = await _read_auth_frame(websocket)
+    if frame is None or frame.get('type') != 'auth':
+        return False, None
+    token = frame.get('token') or _header_token(websocket)
+    if not token:
+        return False, None
     async with session_scope() as session:
-        return await verify_token(session, candidate) is not None
+        if await verify_token(session, token) is None:
+            return False, None
+    after_id = frame.get('after_id')
+    return True, after_id if isinstance(after_id, int) and not isinstance(after_id, bool) else None
 
 
 async def _send_backfill(websocket: WebSocket, chat_id: int, after_id: int) -> None:
@@ -109,13 +145,12 @@ async def _pump(websocket: WebSocket, queue: asyncio.Queue) -> None:
 
 
 @router.websocket('/{chat_id}/ws')
-async def chat_stream(
-    websocket: WebSocket,
-    chat_id: int,
-    token: str | None = None,
-    after_id: int | None = None,
-) -> None:
+async def chat_stream(websocket: WebSocket, chat_id: int) -> None:
     """Живая лента сообщений чата по WebSocket
+
+    Авторизация и ``after_id`` приезжают первым клиентским кадром (см.
+    ``_authenticate``), а не из URL — секрет не должен попадать в query-строку. До
+    успешной проверки сервер не шлёт и не читает ничего, кроме auth-кадра.
 
     Подписка оформляется ДО добора по ``after_id`` — поэтому сообщения, пришедшие
     во время добора, не теряются (попадут в очередь и уйдут следом; возможный
@@ -124,11 +159,10 @@ async def chat_stream(
     Args:
         websocket: соединение
         chat_id: telegram id чата
-        token: сервисный токен (если не в заголовке Authorization)
-        after_id: наибольший уже отрисованный tg_message_id для добора дыры
     """
     await websocket.accept()
-    if not await _is_authorized(websocket, token):
+    authorized, after_id = await _authenticate(websocket)
+    if not authorized:
         await websocket.close(code=_CLOSE_UNAUTHORIZED)
         return
 

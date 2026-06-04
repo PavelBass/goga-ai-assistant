@@ -82,7 +82,9 @@
         "D100",  # "missing-docstring-in-public-module"
         "D104",  # "missing-docstring-in-public-package"
         "D107",  # "missing-docstring-in-__init__"
+        "RUF001",  # "ambiguous-unicode-character-string" — кодовая база на русском, кириллица не омоглиф-атака
         "RUF002",  # "ambiguous-unicode-character-docstring"
+        "RUF003",  # "ambiguous-unicode-character-comment" — кодовая база на русском, кириллица не омоглиф-атака
         "UP024",  # "os-error-alias"
         "S603",  # "subprocess-without-shell-equals-true"
     ]
