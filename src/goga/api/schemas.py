@@ -115,6 +115,44 @@ class ParticipantOut(BaseModel):
     name: str
 
 
+class DailyStateOut(BaseModel):
+    """План ведущих Daily Standup
+
+    Attributes:
+        pretendents: очередь ведущих по порядку (0 — сегодняшний ведущий)
+        increased_at: момент последнего пополнения очереди (unix-время)
+        decreased_at: момент последнего изъятия из очереди (unix-время)
+    """
+
+    pretendents: list[str]
+    increased_at: float
+    decreased_at: float
+
+
+class DailyPlanOut(BaseModel):
+    """Полный дамп данных дейли (участники и план ведущих)
+
+    Attributes:
+        participants: участники дейли в виде {username: имя}
+        state: текущий план ведущих
+    """
+
+    participants: dict[str, str]
+    state: DailyStateOut
+
+
+class PretendentsSwap(BaseModel):
+    """Тело запроса на смену местами двух запланированных ведущих
+
+    Attributes:
+        first: позиция первого ведущего в плане (0 — сегодняшний ведущий)
+        second: позиция второго ведущего в плане
+    """
+
+    first: int = Field(ge=0)
+    second: int = Field(ge=0)
+
+
 class ChatOut(BaseModel):
     """Чат в ответе API истории
 

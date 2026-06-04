@@ -22,7 +22,7 @@ class DailyState:
             if not all([increased_at, decreased_at]):
                 raise ValueError('Both increased_at and decreased_at must be provided for pretendents')
         self._pretendents = deque(pretendents) if pretendents else deque()
-        now = time.time
+        now = time.time()
         self._increased_at = increased_at or now
         self._decreased_at = decreased_at or now
 
@@ -85,6 +85,59 @@ class DailyState:
             self._decreased_at = time.time()
         return pretendent
 
+    def _validate_position(self, position: int) -> None:
+        """Проверить, что позиция указывает на существующего претендента
+
+        Args:
+            position: проверяемая позиция в списке претендентов
+
+        Raises:
+            IndexError: если позиция выходит за границы списка претендентов
+        """
+        size = len(self._pretendents)
+        if not 0 <= position < size:
+            raise IndexError(f'Позиция {position} вне диапазона списка претендентов (размер {size})')
+
+    def swap(self, first: int, second: int) -> None:
+        """Поменять местами двух претендентов по их позициям в списке
+
+        Args:
+            first: позиция первого претендента (0 — ближайший претендент)
+            second: позиция второго претендента
+
+        Raises:
+            IndexError: если любая из позиций выходит за границы списка претендентов
+        """
+        self._validate_position(first)
+        self._validate_position(second)
+        self._pretendents[first], self._pretendents[second] = (
+            self._pretendents[second],
+            self._pretendents[first],
+        )
+
+    def remove(self, position: int) -> str:
+        """Удалить претендента по позиции в списке
+
+        Args:
+            position: позиция претендента (0 — ближайший претендент)
+
+        Returns:
+            username удалённого претендента
+
+        Raises:
+            IndexError: если позиция выходит за границы списка претендентов
+        """
+        self._validate_position(position)
+        member = self._pretendents[position]
+        del self._pretendents[position]
+        self._decreased_at = time.time()
+        return member
+
+    def clear(self) -> None:
+        """Очистить список претендентов"""
+        self._pretendents.clear()
+        self._decreased_at = time.time()
+
     def as_dict(self) -> dict:
         """Преобразование в словарь"""
         return {
@@ -134,6 +187,41 @@ class Daily:
         """Сменить ведущего дейли"""
         self.garantee_pretendents_fullness()
         self._state.pop()
+        self.garantee_pretendents_fullness()
+
+    def swap_pretendents(self, first: int, second: int) -> None:
+        """Поменять местами двух запланированных ведущих
+
+        Args:
+            first: позиция первого ведущего (0 — сегодняшний ведущий)
+            second: позиция второго ведущего
+
+        Raises:
+            IndexError: если любая из позиций выходит за границы плана ведущих
+        """
+        self._state.swap(first, second)
+
+    def remove_pretendent(self, position: int) -> str:
+        """Удалить запланированного ведущего по позиции
+
+        Args:
+            position: позиция ведущего (0 — сегодняшний ведущий)
+
+        Returns:
+            username удалённого ведущего
+
+        Raises:
+            IndexError: если позиция выходит за границы плана ведущих
+        """
+        return self._state.remove(position)
+
+    def recreate_plan(self) -> None:
+        """Пересоздать план ведущих из текущих участников
+
+        Полностью очищает прежнюю очередь ведущих и заново заполняет её
+        случайным порядком из всех участников дейли.
+        """
+        self._state.clear()
         self.garantee_pretendents_fullness()
 
     @property
@@ -248,5 +336,44 @@ class DailyRepository:
     def force_change_today_daily_standup_moderator(self) -> None:
         """Принудительно меняет назначенного ранее ведущего Daily Standup на сегодня"""
         self.data.change_daily_standup_moderator()
+        self._save_data()
+
+    @property
+    def daily_plan(self) -> dict:
+        """Текущий план ведущих и участники дейли (сырой словарь)"""
+        return self.data.as_dict()
+
+    def swap_pretendents(self, first: int, second: int) -> None:
+        """Поменять местами двух запланированных ведущих и сохранить
+
+        Args:
+            first: позиция первого ведущего (0 — сегодняшний ведущий)
+            second: позиция второго ведущего
+
+        Raises:
+            IndexError: если любая из позиций выходит за границы плана ведущих
+        """
+        self.data.swap_pretendents(first, second)
+        self._save_data()
+
+    def remove_pretendent(self, position: int) -> str:
+        """Удалить запланированного ведущего по позиции и сохранить
+
+        Args:
+            position: позиция ведущего (0 — сегодняшний ведущий)
+
+        Returns:
+            username удалённого ведущего
+
+        Raises:
+            IndexError: если позиция выходит за границы плана ведущих
+        """
+        member = self.data.remove_pretendent(position)
+        self._save_data()
+        return member
+
+    def recreate_plan(self) -> None:
+        """Пересоздать план ведущих из участников и сохранить"""
+        self.data.recreate_plan()
         self._save_data()
 
