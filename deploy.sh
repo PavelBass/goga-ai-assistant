@@ -8,8 +8,9 @@
 #   2. pip install -e . — зависимости в pyenv-окружение goga;
 #   3. alembic upgrade head — миграции БД (Postgres локален на сервере, строка
 #      DATABASE_URL берётся из .env по расположению пакета через find_dotenv);
-#   4. перезапуск Гоги (бот + HTTP API в одном процессе) под daemon — метод
-#      запуска совпадает с проверенным ~/run_goga.sh (лог в $LOG, конфиг $CONFIG).
+#   4. перезапуск Гоги (бот + HTTP API в одном процессе) под daemon с --respawn
+#      (поднимает Гогу обратно при падении/внешнем SIGTERM) — метод запуска
+#      совпадает с проверенным ~/run_goga.sh (лог в $LOG, конфиг $CONFIG).
 #
 # Предполагает выполненный одноразовый bootstrap:
 #   - создано pyenv-окружение goga (pyenv virtualenv <py> goga);
@@ -54,10 +55,14 @@ for _ in $(seq 1 20); do
   ss -ltn 2>/dev/null | grep -q "127.0.0.1:$PORT\b" || break
   sleep 0.5
 done
-echo "[deploy] start goga (метод как в ~/run_goga.sh)"
+echo "[deploy] start goga (метод как в ~/run_goga.sh, с --respawn)"
 # Метод запуска взят из проверенного ~/run_goga.sh: daemon с логом в $LOG и
 # абсолютным путём к конфигу. .env goga находит через find_dotenv (по
 # расположению пакета), config.toml вне репозитория — отсюда абсолютный $CONFIG.
-/usr/bin/daemon --name=goga -o "$LOG" -- "$ENV_BIN/goga" --configuration "$CONFIG"
+# --respawn: daemon перезапускает Гогу, если процесс упал или получил внешний
+# SIGTERM (без него любой выход оставлял бота лежать). Корректный стоп при
+# деплое обеспечивает `daemon --stop` выше — он гасит и супервизор, и клиента,
+# поэтому respawn при перезапуске не срабатывает.
+/usr/bin/daemon --name=goga --respawn -o "$LOG" -- "$ENV_BIN/goga" --configuration "$CONFIG"
 
 echo "[deploy] done — Гога перезапущен (бот + HTTP API на 127.0.0.1:$PORT), лог: $LOG"
