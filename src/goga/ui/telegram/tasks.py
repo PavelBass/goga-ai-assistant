@@ -1,14 +1,23 @@
 """Периодические задачи"""
+
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import LinkPreviewOptions
 
 from goga import config
 from goga.gigachat.agents import get_goga_answer
-from goga.gigachat.tools import get_or_create_repository
+from goga.gigachat.tools import (
+    get_or_create_repository,
+    news_mark_shown,
+)
 
 
-async def say_about_daily_standup_leader(bot: Bot) -> None:
+async def say_about_daily_standup_leader(
+    bot: Bot,
+    chats: list[int] | None = None,
+    *,
+    mark_news_shown: bool = True,
+) -> str:
     """Сказать кто сегодня ведущий Daily Standup
 
     Замеченные особенности:
@@ -23,6 +32,13 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
             раз ушёл в рекурсию.
 
     :param bot: экземпляр Телеграм бота
+    :param chats: список chat_id для отправки; None — выбрать по режиму
+        (production → боевые чаты, иначе — dev-чаты)
+    :param mark_news_shown: помечать ли показанные новости как Shown; False —
+        режим предпросмотра (тест-показ в dev-чат), новости не «сжигаются»
+    :returns: сгенерированный текст объявления (один и тот же для всех чатов)
+    :raises Exception: ошибки LLM (get_goga_answer) или отправки в Telegram
+        (bot.send_message)
     """
     repository = get_or_create_repository()
     username = repository.today_daily_standup_moderator
@@ -43,16 +59,25 @@ async def say_about_daily_standup_leader(bot: Bot) -> None:
     prompt += '2. Описание новости должно быть в точности как было получено, без сокращений и спрятано под спойлером (символ ::). Например: :: Описание новости ::\n'
     prompt += 'Если новостей нет, расскажи интересный факт о любой технологии связанной '
     prompt += 'с искусственным интеллектом. Используй эмодзи для оформления.'
-    chats = config.CONFIG['chats']['development']
-    if config.CONFIG['general']['mode'] == 'production':
-        chats = config.CONFIG['chats']['production']
-    answer = await get_goga_answer(chats[0], prompt)
+    recipients = chats
+    if recipients is None:
+        recipients = config.CONFIG['chats']['development']
+        if config.CONFIG['general']['mode'] == 'production':
+            recipients = config.CONFIG['chats']['production']
+
+    token = news_mark_shown.set(mark_news_shown)
+    try:
+        answer = await get_goga_answer(recipients[0], prompt)
+    finally:
+        news_mark_shown.reset(token)
+
     answer = answer.replace(username, safe_username)
     print(answer)
-    for chat_id in chats:
+    for chat_id in recipients:
         await bot.send_message(
             chat_id,
             answer,
             parse_mode=ParseMode.MARKDOWN,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
+    return answer

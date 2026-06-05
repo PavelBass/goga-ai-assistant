@@ -1,6 +1,7 @@
 """Эндпоинты управления новостями (защищены Bearer-токеном)"""
 
 import datetime as dt
+from itertools import groupby
 from typing import Annotated
 
 from fastapi import (
@@ -14,11 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from goga.api.schemas import (
     NewsCreate,
+    NewsFromUrl,
     NewsOut,
+    NewsPlanDayOut,
+    NewsPlanOut,
+    NewsReorder,
     NewsUpdate,
 )
 from goga.api.security import require_token
 from goga.data.news import NewsRepository
+from goga.data.news_ingest import (
+    API_INGEST_SOURCE_ID,
+    NewsIngestError,
+    ingest_news_from_url,
+)
 from goga.db.engine import get_session
 from goga.db.models import NewsStatus
 
@@ -48,8 +58,86 @@ async def list_news(
 
 @router.post('', response_model=NewsOut, status_code=status.HTTP_201_CREATED)
 async def create_news(payload: NewsCreate, session: SessionDep):
-    """Создаёт новость"""
+    """Создаёт новость с готовым текстом (title + description)"""
     return await NewsRepository(session).add(**payload.model_dump(exclude_none=True), created_by='api')
+
+
+@router.post('/from-url', response_model=NewsOut, status_code=status.HTTP_201_CREATED)
+async def create_news_from_url(payload: NewsFromUrl, session: SessionDep):
+    """Создаёт новость из ссылки: Гога скачивает статью и сам делает анонс
+
+    Raises:
+        fastapi.HTTPException: 422 — не удалось скачать/извлечь статью;
+            502 — LLM вернул ответ не в ожидаемом формате
+    """
+    try:
+        return await ingest_news_from_url(
+            session,
+            payload.url,
+            created_by='api',
+            source_id=API_INGEST_SOURCE_ID,
+            scheduled_for=payload.scheduled_for,
+            position=payload.position,
+        )
+    except NewsIngestError as error:
+        if error.kind == 'download':
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail='Не удалось загрузить или извлечь содержимое статьи',
+            ) from error
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='LLM вернул ответ не в ожидаемом формате',
+        ) from error
+
+
+@router.get('/plan', response_model=NewsPlanOut)
+async def news_plan(
+    session: SessionDep,
+    from_: Annotated[dt.date | None, Query(alias='from')] = None,
+    days: Annotated[int, Query(ge=1, le=60)] = 7,
+):
+    """Возвращает план показа: новости по дням на период + непоказанные без даты
+
+    Период — [from; from + days - 1] включительно (from по умолчанию — сегодня).
+    """
+    repository = NewsRepository(session)
+    start = from_ or dt.date.today()
+    end = start + dt.timedelta(days=days - 1)
+
+    scheduled = await repository.scheduled_between(start, end)
+    plan_days = [
+        NewsPlanDayOut(date=day, items=[NewsOut.model_validate(news) for news in group])
+        for day, group in groupby(scheduled, key=lambda news: news.scheduled_for)
+    ]
+
+    pending = await repository.list(status=NewsStatus.Pending, limit=500)
+    undated = [NewsOut.model_validate(news) for news in pending if news.scheduled_for is None]
+    return NewsPlanOut(days=plan_days, undated=undated)
+
+
+@router.put('/plan/{plan_date}', response_model=NewsPlanDayOut)
+async def set_news_plan(plan_date: dt.date, payload: NewsReorder, session: SessionDep):
+    """Задаёт план показа на день: дату и порядок для перечисленных новостей
+
+    Каждой новости из ids проставляется scheduled_for=plan_date и position =
+    индекс в списке (0..N-1); статус Pending переводится в Scheduled.
+
+    Raises:
+        fastapi.HTTPException: 404 — какой-то id не найден; 400 — новость уже
+            показана/архивирована и не может быть в плане
+    """
+    repository = NewsRepository(session)
+    try:
+        items = await repository.reorder_day(plan_date, payload.ids)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Новость не найдена: id {error.args[0]}',
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+    return NewsPlanDayOut(date=plan_date, items=[NewsOut.model_validate(news) for news in items])
 
 
 @router.get('/{news_id}', response_model=NewsOut)

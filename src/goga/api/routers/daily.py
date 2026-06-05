@@ -11,7 +11,9 @@ from fastapi import (
     status,
 )
 
+from goga import config
 from goga.api.schemas import (
+    AnnouncementPreviewOut,
     DailyPlanOut,
     ModeratorOut,
     ParticipantOut,
@@ -110,3 +112,29 @@ async def recreate_plan():
     repository = _repository()
     repository.recreate_plan()
     return repository.daily_plan
+
+
+@router.post('/announcement/preview', response_model=AnnouncementPreviewOut)
+async def preview_announcement():
+    """Тест-показ ежедневного объявления (ведущий + новости) в dev-чат
+
+    Использует тот же код, что и боевое объявление, но шлёт в dev-чаты из
+    config и НЕ помечает новости показанными (mark_news_shown=False) — чтобы
+    тестовая отправка не «сжигала» план показа. Чтобы протестировать конкретные
+    новости, предварительно поставьте их на сегодня через план показа.
+
+    Сообщение реально уходит в dev-чат и попадает в историю/WS-ленту как
+    исходящее — это ожидаемо.
+
+    Raises:
+        fastapi.HTTPException: 503 — репозиторий дейли не инициализирован
+    """
+    _repository()  # гарантирует инициализацию дейли (иначе 503)
+    # Ленивый импорт: бот и задача тянут aiogram/агента, незачем грузить их при
+    # сборке FastAPI-приложения.
+    from goga.ui.telegram.aiogram.bot import bot
+    from goga.ui.telegram.tasks import say_about_daily_standup_leader
+
+    chats = config.CONFIG['chats']['development']
+    text = await say_about_daily_standup_leader(bot, chats, mark_news_shown=False)
+    return AnnouncementPreviewOut(chats=chats, text=text)

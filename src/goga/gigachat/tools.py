@@ -1,3 +1,4 @@
+import contextvars
 from pathlib import Path
 
 from langchain.tools import tool
@@ -7,6 +8,13 @@ from goga import config
 from goga.data.daily import DailyRepository
 from goga.data.news import NewsRepository
 from goga.db.engine import session_scope
+
+# Управляет побочным эффектом get_news: помечать ли отданные новости показанными.
+# По умолчанию True (боевой показ). Режим предпросмотра (тест-показ в dev-чат)
+# выставляет False на время вызова агента, чтобы тестовая отправка не «сжигала»
+# новости. get_news — async-инструмент, LangGraph ждёт его в том же контексте,
+# поэтому значение долетает до вызова без явной передачи через цепочку агента.
+news_mark_shown: contextvars.ContextVar[bool] = contextvars.ContextVar('news_mark_shown', default=True)
 
 
 class Participant(BaseModel):
@@ -90,6 +98,10 @@ async def get_news() -> str:
     описание. Новости отсортированы по плану показа. После вызова этого
     инструмента новости считаются показанными (помечаются Shown), но не
     удаляются из базы. Если новостей нет, возвращает пустую строку.
+
+    В режиме предпросмотра (ContextVar ``news_mark_shown`` == False, его
+    выставляет тест-показ в dev-чат) новости отдаются, но показанными НЕ
+    помечаются — чтобы тестовая отправка не «сжигала» план показа.
     """
     limit = config.CONFIG['news']['limit']
     async with session_scope() as session:
@@ -104,5 +116,6 @@ async def get_news() -> str:
                 f'<news id={i}>\n<title>**{news.title}**</title>\n'
                 f'{url_tag}<description>{news.description}</description>\n</news>'
             )
-        await repository.mark_shown([news.id for news in items])
+        if news_mark_shown.get():
+            await repository.mark_shown([news.id for news in items])
     return '\n\n'.join(parts)

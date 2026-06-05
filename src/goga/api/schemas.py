@@ -91,6 +91,70 @@ class NewsOut(BaseModel):
     created_by: str | None
 
 
+class NewsFromUrl(BaseModel):
+    """Тело запроса на создание новости из ссылки
+
+    Гога сам скачает статью и сожмёт её LLM в заголовок и анонс.
+
+    Attributes:
+        url: ссылка на статью-источник
+        scheduled_for: день, на который запланирован показ (опционально)
+        position: порядок показа в пределах дня (опционально)
+    """
+
+    url: str = Field(min_length=1)
+    scheduled_for: dt.date | None = None
+    position: int | None = None
+
+
+class NewsReorder(BaseModel):
+    """Тело запроса на установку плана показа на конкретный день
+
+    Attributes:
+        ids: идентификаторы новостей в желаемом порядке показа; каждой будет
+            проставлен день из пути запроса и position = индекс в списке
+    """
+
+    ids: list[int] = Field(min_length=1)
+
+
+class NewsPlanDayOut(BaseModel):
+    """Новости одного дня плана показа
+
+    Attributes:
+        date: день показа
+        items: новости этого дня в порядке показа (по position)
+    """
+
+    date: dt.date
+    items: list[NewsOut]
+
+
+class NewsPlanOut(BaseModel):
+    """План показа новостей на ближайшие дни
+
+    Attributes:
+        days: дни с запланированными новостями (по возрастанию даты)
+        undated: непоказанные новости без даты (Pending) — показываются при
+            ближайшем объявлении
+    """
+
+    days: list[NewsPlanDayOut]
+    undated: list[NewsOut]
+
+
+class AnnouncementPreviewOut(BaseModel):
+    """Результат тест-показа ежедневного объявления в dev-чат
+
+    Attributes:
+        chats: chat_id, в которые отправлено объявление
+        text: отправленный текст объявления (ведущий + новости)
+    """
+
+    chats: list[int]
+    text: str
+
+
 class ModeratorOut(BaseModel):
     """Ведущий Daily Standup
 

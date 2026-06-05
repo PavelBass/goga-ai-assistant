@@ -220,6 +220,74 @@ class NewsRepository:
         result = await self._session.execute(query)
         return result.scalars().all()
 
+    async def scheduled_between(self, start: dt.date, end: dt.date) -> Sequence[News]:
+        """Возвращает непоказанные новости с датой показа в диапазоне [start, end]
+
+        Берутся новости со статусом Pending/Scheduled и заданным ``scheduled_for``
+        в указанных границах (включительно), в порядке плана показа. Новости без
+        даты (Pending без ``scheduled_for``) сюда не попадают — их отдаёт
+        обычный ``list``.
+
+        Args:
+            start: первый день диапазона (включительно)
+            end: последний день диапазона (включительно)
+
+        Raises:
+            sqlalchemy.exc.SQLAlchemyError: при ошибке чтения из БД
+        """
+        query = (
+            select(News)
+            .where(
+                News.status.in_((NewsStatus.Pending, NewsStatus.Scheduled)),
+                News.scheduled_for.is_not(None),
+                News.scheduled_for >= start,
+                News.scheduled_for <= end,
+            )
+            .order_by(
+                News.scheduled_for.asc(),
+                News.position.asc().nullslast(),
+                News.source_date.asc().nullslast(),
+                News.id.asc(),
+            )
+        )
+        result = await self._session.execute(query)
+        return result.scalars().all()
+
+    async def reorder_day(self, day: dt.date, ordered_ids: Sequence[int]) -> Sequence[News]:
+        """Задаёт план показа на день: дату и порядок для перечисленных новостей
+
+        Каждой новости из ``ordered_ids`` проставляется ``scheduled_for=day`` и
+        ``position`` = её индекс в списке (0..N-1). Статус Pending переводится в
+        Scheduled (новость привязывается ко дню); прочие поля не трогаются.
+
+        Args:
+            day: день, на который ставится план показа
+            ordered_ids: идентификаторы новостей в желаемом порядке показа
+
+        Returns:
+            обновлённые новости в том же порядке, что и ``ordered_ids``
+
+        Raises:
+            KeyError: если какой-то id не найден
+            ValueError: если новость уже показана/архивирована (Shown/Archived) и
+                не может быть включена в план
+            sqlalchemy.exc.SQLAlchemyError: при ошибке записи в БД
+        """
+        updated: list[News] = []
+        for position, news_id in enumerate(ordered_ids):
+            news = await self._session.get(News, news_id)
+            if news is None:
+                raise KeyError(news_id)
+            if news.status in (NewsStatus.Shown, NewsStatus.Archived):
+                raise ValueError(f'Новость {news_id} уже показана/архивирована и не может быть в плане')
+            news.scheduled_for = day
+            news.position = position
+            if news.status == NewsStatus.Pending:
+                news.status = NewsStatus.Scheduled
+            updated.append(news)
+        await self._session.flush()
+        return updated
+
     async def mark_shown(self, ids: Sequence[int]) -> int:
         """Помечает новости показанными (status=Shown, shown_at=now)
 
