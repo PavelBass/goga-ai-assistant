@@ -12,6 +12,59 @@ from goga.gigachat.tools import (
 )
 
 
+def _news_instructions() -> str:
+    """Часть промпта ежедневного объявления с инструкцией показа новостей
+
+    Returns:
+        текст инструкции для LLM: получить новости через get_news и оформить
+        их, либо рассказать факт об ИИ, если новостей нет
+    """
+    prompt = 'Вызови инструмент get_news, чтобы получить новости. '
+    prompt += 'Если новости есть, предложи команде ознакомиться с ними: '
+    prompt += 'Каждая новость должна быть состоять из ссылки-заголовка и описания. Подробнее:\n'
+    prompt += '1. Заголовок должен быть оформлен как ссылка на оригинальную статью и представлен отдельной строкой. Например: [Заголовок новости](ссылка). Перед заголовком можно добавить эмодзи\n'
+    prompt += '2. Описание новости должно быть в точности как было получено, без сокращений и спрятано под спойлером (символ ::). Например: :: Описание новости ::\n'
+    prompt += 'Если новостей нет, расскажи интересный факт о любой технологии связанной '
+    prompt += 'с искусственным интеллектом. Используй эмодзи для оформления.'
+    return prompt
+
+
+def _leader_prompt(username: str, name: str | None) -> str:
+    """Промпт объявления ведущего Daily Standup с новостями
+
+    Args:
+        username: телеграм-username сегодняшнего ведущего
+        name: имя ведущего или None, если имя неизвестно
+
+    Returns:
+        полный текст промпта для LLM
+    """
+    mention = f'@{username}'
+    leader_display = f'**{name}** ({mention})' if name else f'**{mention}**'
+    prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
+    prompt += 'рассказывать команде о том кто ведущий сегодняшнего Daily Standup в командном чате. '
+    prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь сказать команде, '
+    prompt += f'что {leader_display} сегодня ведёт Daily Standup. '
+    prompt += f'Обязательно укажи в ответе упоминание {mention}, чтобы пользователь получил уведомление. '
+    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. '
+    return prompt + _news_instructions()
+
+
+def _news_only_prompt() -> str:
+    """Промпт утреннего приветствия с новостями, без выбора ведущего
+
+    Returns:
+        полный текст промпта для LLM
+    """
+    prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
+    prompt += 'приветствовать команду в командном чате и рассказывать новости. '
+    prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь пожелать команде доброго утра '
+    prompt += 'и продуктивного дня. '
+    prompt += 'Не выбирай и не упоминай ведущего Daily Standup — сегодня только приветствие и новости. '
+    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. '
+    return prompt + _news_instructions()
+
+
 async def say_about_daily_standup_leader(
     bot: Bot,
     chats: list[int] | None = None,
@@ -19,6 +72,10 @@ async def say_about_daily_standup_leader(
     mark_news_shown: bool = True,
 ) -> str:
     """Сказать кто сегодня ведущий Daily Standup
+
+    Режим задаётся настройкой [daily].announce_moderator (по умолчанию true).
+    При false ведущий не выбирается (очередь DailyRepository не сдвигается),
+    а Гога отправляет только утреннее приветствие с новостями.
 
     Замеченные особенности:
         - Он может говорить от лица женского пола, реальный пример:
@@ -40,25 +97,13 @@ async def say_about_daily_standup_leader(
     :raises Exception: ошибки LLM (get_goga_answer) или отправки в Telegram
         (bot.send_message)
     """
-    repository = get_or_create_repository()
-    username = repository.today_daily_standup_moderator
-    safe_username = username.replace('_', '\\_')
-    name = repository.get_name(username)
-    mention = f'@{username}'
-    leader_display = f'**{name}** ({mention})' if name else f'**{mention}**'
-    prompt = 'Гога, необходимо в 8 часов утра, за два часа до Daily Standup, который начинается в 10:00, '
-    prompt += 'рассказывать команде о том кто ведущий сегодняшнего Daily Standup в командном чате. '
-    prompt += 'Представь, что сейчас утро, 8:00, и твоя очередь сказать команде, '
-    prompt += f'что {leader_display} сегодня ведёт Daily Standup. '
-    prompt += f'Обязательно укажи в ответе упоминание {mention}, чтобы пользователь получил уведомление. '
-    prompt += 'Будь вежливым, приветливым, позитивным и вдохновляющим. '
-    prompt += 'Вызови инструмент get_news, чтобы получить новости. '
-    prompt += 'Если новости есть, предложи команде ознакомиться с ними: '
-    prompt += 'Каждая новость должна быть состоять из ссылки-заголовка и описания. Подробнее:\n'
-    prompt += '1. Заголовок должен быть оформлен как ссылка на оригинальную статью и представлен отдельной строкой. Например: [Заголовок новости](ссылка). Перед заголовком можно добавить эмодзи\n'
-    prompt += '2. Описание новости должно быть в точности как было получено, без сокращений и спрятано под спойлером (символ ::). Например: :: Описание новости ::\n'
-    prompt += 'Если новостей нет, расскажи интересный факт о любой технологии связанной '
-    prompt += 'с искусственным интеллектом. Используй эмодзи для оформления.'
+    username = None
+    if config.CONFIG.get('daily', {}).get('announce_moderator', True):
+        repository = get_or_create_repository()
+        username = repository.today_daily_standup_moderator
+        prompt = _leader_prompt(username, repository.get_name(username))
+    else:
+        prompt = _news_only_prompt()
     recipients = chats
     if recipients is None:
         recipients = config.CONFIG['chats']['development']
@@ -71,7 +116,8 @@ async def say_about_daily_standup_leader(
     finally:
         news_mark_shown.reset(token)
 
-    answer = answer.replace(username, safe_username)
+    if username is not None:
+        answer = answer.replace(username, username.replace('_', '\\_'))
     print(answer)
     for chat_id in recipients:
         await bot.send_message(
