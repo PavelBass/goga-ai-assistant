@@ -1,15 +1,40 @@
 """Периодические задачи"""
 
+import logging
+
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from aiogram.types import LinkPreviewOptions
 
 from goga import config
+from goga.data.news import NewsRepository
+from goga.db.engine import session_scope
 from goga.gigachat.agents import get_goga_answer
 from goga.gigachat.tools import (
     get_or_create_repository,
     news_mark_shown,
 )
+
+logger = logging.getLogger('Goga tasks')
+
+
+async def _has_news_for_today() -> bool:
+    """Есть ли новости к показу сегодня
+
+    Read-only проверка тем же запросом, что и инструмент get_news
+    (due_for_today), но показанными новости не помечаются — это сделает
+    сам get_news при генерации объявления.
+
+    Returns:
+        True, если есть хотя бы одна непоказанная новость на сегодня
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: при ошибке чтения из БД
+    """
+    limit = config.CONFIG['news']['limit']
+    async with session_scope() as session:
+        items = await NewsRepository(session).due_for_today(limit)
+        return bool(items)
 
 
 def _news_instructions() -> str:
@@ -75,7 +100,8 @@ async def say_about_daily_standup_leader(
 
     Режим задаётся настройкой [daily].announce_moderator (по умолчанию true).
     При false ведущий не выбирается (очередь DailyRepository не сдвигается),
-    а Гога отправляет только утреннее приветствие с новостями.
+    а Гога отправляет только утреннее приветствие с новостями. Если в этом
+    режиме новостей на сегодня нет, в чат ничего не отправляется.
 
     Замеченные особенности:
         - Он может говорить от лица женского пола, реальный пример:
@@ -93,7 +119,8 @@ async def say_about_daily_standup_leader(
         (production → боевые чаты, иначе — dev-чаты)
     :param mark_news_shown: помечать ли показанные новости как Shown; False —
         режим предпросмотра (тест-показ в dev-чат), новости не «сжигаются»
-    :returns: сгенерированный текст объявления (один и тот же для всех чатов)
+    :returns: сгенерированный текст объявления (один и тот же для всех чатов);
+        пустая строка, если news-only режим пропустил отправку из-за отсутствия новостей
     :raises Exception: ошибки LLM (get_goga_answer) или отправки в Telegram
         (bot.send_message)
     """
@@ -102,8 +129,11 @@ async def say_about_daily_standup_leader(
         repository = get_or_create_repository()
         username = repository.today_daily_standup_moderator
         prompt = _leader_prompt(username, repository.get_name(username))
-    else:
+    elif await _has_news_for_today():
         prompt = _news_only_prompt()
+    else:
+        logger.info('Новостей на сегодня нет — утреннее объявление не отправляется')
+        return ''
     recipients = chats
     if recipients is None:
         recipients = config.CONFIG['chats']['development']

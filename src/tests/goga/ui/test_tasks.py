@@ -54,6 +54,12 @@ def answer_mock(mocker):
     return mocker.patch.object(tasks, 'get_goga_answer', mocker.AsyncMock(return_value='Доброе утро!'))
 
 
+@pytest.fixture
+def has_news(mocker):
+    """Мок проверки новостей на сегодня: по умолчанию новости есть"""
+    return mocker.patch.object(tasks, '_has_news_for_today', mocker.AsyncMock(return_value=True))
+
+
 async def test_default_mode_announces_moderator(base_config, bot, repository_factory, answer_mock):
     """Без секции [daily] ведущий выбирается и упоминается в промпте"""
     answer_mock.return_value = 'Сегодня ведёт pavel_bass'
@@ -77,7 +83,7 @@ async def test_explicit_true_announces_moderator(base_config, bot, repository_fa
     assert '@pavel_bass' in answer_mock.call_args.args[1]
 
 
-async def test_news_only_skips_moderator(base_config, bot, repository_factory, answer_mock):
+async def test_news_only_skips_moderator(base_config, bot, repository_factory, answer_mock, has_news):
     """announce_moderator = false: очередь ведущих не трогается, промпт без упоминаний"""
     base_config['daily'] = {'announce_moderator': False}
     answer = await tasks.say_about_daily_standup_leader(bot)
@@ -91,7 +97,7 @@ async def test_news_only_skips_moderator(base_config, bot, repository_factory, a
     bot.send_message.assert_awaited_once()
 
 
-async def test_news_only_production_recipients(base_config, bot, repository_factory, answer_mock):
+async def test_news_only_production_recipients(base_config, bot, repository_factory, answer_mock, has_news):
     """В production news-only объявление уходит в боевые чаты"""
     base_config['general']['mode'] = 'production'
     base_config['daily'] = {'announce_moderator': False}
@@ -100,3 +106,25 @@ async def test_news_only_production_recipients(base_config, bot, repository_fact
     assert answer_mock.call_args.args[0] == 202
     bot.send_message.assert_awaited_once()
     assert bot.send_message.call_args.args[0] == 202
+
+
+async def test_news_only_without_news_sends_nothing(base_config, bot, repository_factory, answer_mock, has_news):
+    """announce_moderator = false и новостей нет: ни LLM, ни отправки в чат"""
+    base_config['daily'] = {'announce_moderator': False}
+    has_news.return_value = False
+    answer = await tasks.say_about_daily_standup_leader(bot)
+
+    assert answer == ''
+    repository_factory.assert_not_called()
+    answer_mock.assert_not_awaited()
+    bot.send_message.assert_not_awaited()
+
+
+async def test_leader_mode_without_news_still_announces(base_config, bot, repository_factory, answer_mock, has_news):
+    """С включённым выбором ведущего отсутствие новостей не отменяет объявление"""
+    has_news.return_value = False
+    await tasks.say_about_daily_standup_leader(bot)
+
+    has_news.assert_not_awaited()
+    repository_factory.assert_called_once()
+    bot.send_message.assert_awaited_once()
