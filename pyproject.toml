@@ -26,6 +26,7 @@
 [project.scripts]
     goga= "goga.cli:main"
     goga-token = "goga.cli:token_main"
+    goga-calendar = "goga.cli:calendar_main"
 
 [project.optional-dependencies]
     docs = [

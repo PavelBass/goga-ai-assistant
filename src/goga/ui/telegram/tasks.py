@@ -1,5 +1,7 @@
 """Периодические задачи"""
 
+import asyncio
+import datetime as dt
 import logging
 
 from aiogram import Bot
@@ -8,6 +10,7 @@ from aiogram.types import LinkPreviewOptions
 
 from goga import config
 from goga.data.news import NewsRepository
+from goga.data.production_calendar import update_production_calendar
 from goga.db.engine import session_scope
 from goga.gigachat.agents import get_goga_answer
 from goga.gigachat.tools import (
@@ -16,6 +19,22 @@ from goga.gigachat.tools import (
 )
 
 logger = logging.getLogger('Goga tasks')
+
+
+async def refresh_production_calendar() -> None:
+    """Обновляет производственный календарь на текущий год из открытых данных
+
+    Скачивание блокирующее, поэтому выполняется в отдельном потоке, чтобы не
+    вставать в общий event loop. Ошибки сети не роняют бота: при отсутствии
+    календаря функция is_workday использует fallback на день недели.
+    """
+    year = dt.date.today().year
+    try:
+        calendar = await asyncio.to_thread(update_production_calendar, year)
+    except (OSError, ValueError):
+        logger.warning('Не удалось обновить производственный календарь %s', year, exc_info=True)
+        return
+    logger.info('Производственный календарь %s обновлён (нерабочих дней: %s)', year, len(calendar.days_off))
 
 
 async def _has_news_for_today() -> bool:
