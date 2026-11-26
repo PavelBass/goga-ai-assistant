@@ -10,6 +10,7 @@ from goga import config
 from goga.api.app import app as api_app
 from goga.ui.telegram.aiogram.bot import bot
 from goga.ui.telegram.aiogram.dispatcher import dp
+from goga.ui.telegram.scheduling import workday_cron_trigger, workday_only
 from goga.ui.telegram.tasks import refresh_production_calendar, say_about_daily_standup_leader
 
 logger = logging.getLogger('Goga run')
@@ -21,15 +22,17 @@ _DEV_DAILY_CRON = '*/1 * * * *'
 def _build_daily_trigger() -> CronTrigger:
     """Строит триггер ежедневного объявления ведущего
 
-    В продакшене расписание и таймзона берутся из config['schedule']
-    (например, '0 8 * * mon-fri' в зоне 'Europe/Moscow'). В остальных режимах
-    задача запускается каждую минуту для удобства отладки.
+    В продакшене время и таймзона берутся из config['schedule'] (например,
+    '0 8 * * *' в зоне 'Europe/Moscow'). Триггер срабатывает каждый день:
+    рабочие/выходные дни определяет производственный календарь (декоратор
+    workday_only), а не правило mon-fri. В остальных режимах задача
+    запускается каждую минуту для удобства отладки.
     """
     if config.CONFIG['general']['mode'] != 'production':
         return CronTrigger.from_crontab(_DEV_DAILY_CRON)
     schedule = config.CONFIG.get('schedule', {})
-    return CronTrigger.from_crontab(
-        schedule.get('daily_cron', '0 8 * * mon-fri'),
+    return workday_cron_trigger(
+        schedule.get('daily_cron', '0 8 * * *'),
         timezone=schedule.get('timezone', 'Europe/Moscow'),
     )
 
@@ -88,7 +91,9 @@ async def run_telegram_bot():
     build_bot_messages()
     _register_history_middlewares()
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(func=say_about_daily_standup_leader, args=[bot], trigger=_build_daily_trigger())
+    scheduler.add_job(
+        func=workday_only(say_about_daily_standup_leader), args=[bot], trigger=_build_daily_trigger()
+    )
     # Календарь на текущий год: обновляем при старте и далее раз в сутки.
     scheduler.add_job(
         func=refresh_production_calendar,
