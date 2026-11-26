@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -9,7 +10,7 @@ from goga import config
 from goga.api.app import app as api_app
 from goga.ui.telegram.aiogram.bot import bot
 from goga.ui.telegram.aiogram.dispatcher import dp
-from goga.ui.telegram.tasks import say_about_daily_standup_leader
+from goga.ui.telegram.tasks import refresh_production_calendar, say_about_daily_standup_leader
 
 logger = logging.getLogger('Goga run')
 
@@ -88,6 +89,14 @@ async def run_telegram_bot():
     _register_history_middlewares()
     scheduler = AsyncIOScheduler()
     scheduler.add_job(func=say_about_daily_standup_leader, args=[bot], trigger=_build_daily_trigger())
+    # Календарь на текущий год: обновляем при старте и далее раз в сутки.
+    scheduler.add_job(
+        func=refresh_production_calendar,
+        trigger='interval',
+        days=1,
+        next_run_time=datetime.now(),
+        id='refresh_production_calendar',
+    )
     scheduler.start()
 
     tasks = [asyncio.create_task(dp.start_polling(bot), name='aiogram-polling')]

@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import datetime as dt
 import logging
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from goga import config
 from goga.config import initiate_config
+from goga.data.production_calendar import is_workday, update_production_calendar
 from goga.gigachat.tools import get_or_create_repository
 from goga.ui.telegram.aiogram.run import run_telegram_bot
 
@@ -119,6 +121,36 @@ def token_main():
         asyncio.run(_list_tokens())
     elif arguments.command == 'revoke':
         asyncio.run(_revoke_token(arguments.name))
+
+
+def calendar_main():
+    """Точка входа CLI управления производственным календарём (goga-calendar)
+
+    Подкоманды:
+        update [--year N]        — скачать календарь года из открытых данных и сохранить
+        check [--date ГГГГ-ММ-ДД] — показать, является ли день рабочим (по умолчанию сегодня)
+    """
+    parser = argparse.ArgumentParser(prog='goga-calendar', description='Управление производственным календарём РФ')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    update_parser = subparsers.add_parser('update', help='Скачать календарь года из открытых данных и сохранить')
+    update_parser.add_argument(
+        '--year', type=int, default=dt.date.today().year, help='Год календаря (по умолчанию текущий)'
+    )
+
+    check_parser = subparsers.add_parser('check', help='Показать, является ли день рабочим')
+    check_parser.add_argument(
+        '--date', type=dt.date.fromisoformat, default=None, help='Дата ГГГГ-ММ-ДД (по умолчанию сегодня)'
+    )
+
+    arguments = parser.parse_args()
+    if arguments.command == 'update':
+        calendar = update_production_calendar(arguments.year)
+        print(f'Календарь {calendar.year} сохранён: нерабочих дней {len(calendar.days_off)}.')
+    elif arguments.command == 'check':
+        day = arguments.date or dt.date.today()
+        state = 'рабочий' if is_workday(day) else 'нерабочий'
+        print(f'{day.isoformat()} — {state} день.')
 
 
 if __name__ == '__main__':
