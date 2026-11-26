@@ -145,11 +145,19 @@ def calendar_main():
 
     arguments = parser.parse_args()
     if arguments.command == 'update':
-        calendar = update_production_calendar(arguments.year)
+        try:
+            calendar = update_production_calendar(arguments.year)
+        except (OSError, ValueError) as ex:
+            print(f'Ошибка: не удалось обновить календарь {arguments.year}: {ex}', file=sys.stderr)
+            raise SystemExit(1) from None
         print(f'Календарь {calendar.year} сохранён: нерабочих дней {len(calendar.days_off)}.')
     elif arguments.command == 'check':
         day = arguments.date or dt.date.today()
-        state = 'рабочий' if is_workday(day) else 'нерабочий'
+        try:
+            state = 'рабочий' if is_workday(day) else 'нерабочий'
+        except (OSError, ValueError) as ex:
+            print(f'Ошибка: не удалось определить рабочий день {day.isoformat()}: {ex}', file=sys.stderr)
+            raise SystemExit(1) from None
         print(f'{day.isoformat()} — {state} день.')
 
 
